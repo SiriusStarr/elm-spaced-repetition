@@ -1052,6 +1052,7 @@ suiteGetDue =
 
                             bad =
                                 ( nextCard, False )
+
                             proportionOverdue c =
                                 toFloat (overdueAmount deck.settings time c.srsData) / toFloat (getInterval deck.settings c.srsData)
                         in

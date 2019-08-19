@@ -1,5 +1,7 @@
 # SpacedRepetition
 
+[![Build Status](https://travis-ci.com/SiriusStarr/elm-spaced-repetition.svg?branch=master)](https://travis-ci.com/SiriusStarr/elm-spaced-repetition)
+
 ## Introduction
 
 This package provides everything necessary to create spaced repetition software

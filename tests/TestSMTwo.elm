@@ -1,15 +1,50 @@
-module TestSMTwo exposing (suiteAnswerCard, suiteAnswerCardInDeck, suiteGetDue, suiteJson)
+module TestSMTwo exposing
+    ( suiteAnswerCard
+    , suiteAnswerCardInDeck
+    , suiteGetDue
+    , suiteJson
+    )
 
 import Array exposing (Array)
 import Array.Extra
 import Expect exposing (FloatingPointTolerance(..))
-import Fuzz exposing (Fuzzer, array, constant, floatRange, int, intRange, map, map2, map3, oneOf)
+import Fuzz
+    exposing
+        ( Fuzzer
+        , array
+        , constant
+        , floatRange
+        , int
+        , intRange
+        , map
+        , map2
+        , map3
+        , oneOf
+        )
 import Json.Decode as Decode
 import Json.Encode as Encode
 import List.Extra
 import Random
-import SpacedRepetition.Internal.SMTwo exposing (EFactor, ReviewHistory(..), Streak(..), eFactor, eFactorToFloat, streakToInterval)
-import SpacedRepetition.SMTwo exposing (Answer(..), Card, SRSData, answerCard, answerCardInDeck, decoderSRSData, encoderSRSData, getDueCardIndices)
+import SpacedRepetition.Internal.SMTwo
+    exposing
+        ( EFactor
+        , ReviewHistory(..)
+        , Streak(..)
+        , eFactor
+        , eFactorToFloat
+        , streakToInterval
+        )
+import SpacedRepetition.SMTwo
+    exposing
+        ( Answer(..)
+        , Card
+        , SRSData
+        , answerCard
+        , answerCardInDeck
+        , decoderSRSData
+        , encoderSRSData
+        , getDueCardIndices
+        )
 import Test exposing (Test, describe, fuzz, fuzz2, fuzz3)
 import Time
 import Time.Extra exposing (Interval(..), diff)
@@ -271,11 +306,7 @@ suiteAnswerCard =
                                                     False
 
                                                 ( TwoPlus oldI, TwoPlus newI ) ->
-                                                    if oldI < newI then
-                                                        True
-
-                                                    else
-                                                        False
+                                                    oldI < newI
                             in
                             case answer of
                                 Perfect ->
@@ -527,11 +558,7 @@ suiteGetDue =
                     isDue c =
                         case c.srsData of
                             Reviewed _ reviewed streak ->
-                                if overdueAmount (streakToInterval streak) reviewed >= 0 then
-                                    True
-
-                                else
-                                    False
+                                overdueAmount (streakToInterval streak) reviewed >= 0
 
                             _ ->
                                 True
@@ -551,11 +578,7 @@ suiteGetDue =
                     isNotDue c =
                         case c.srsData of
                             Reviewed _ reviewed streak ->
-                                if overdueAmount (streakToInterval streak) reviewed >= 0 then
-                                    False
-
-                                else
-                                    True
+                                overdueAmount (streakToInterval streak) reviewed < 0
 
                             _ ->
                                 False

@@ -1,4 +1,11 @@
-module SpacedRepetition.Internal.SMTwo exposing (EFactor, ReviewHistory(..), Streak(..), eFactor, eFactorToFloat, streakToInterval)
+module SpacedRepetition.Internal.SMTwo exposing
+    ( EFactor
+    , ReviewHistory(..)
+    , Streak(..)
+    , eFactor
+    , eFactorToFloat
+    , streakToInterval
+    )
 
 import Time
 

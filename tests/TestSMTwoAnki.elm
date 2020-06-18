@@ -1,16 +1,70 @@
-module TestSMTwoAnki exposing (suiteAnswerCard, suiteAnswerCardInDeck, suiteGetDue, suiteGetLeeches, suiteJson)
+module TestSMTwoAnki exposing
+    ( suiteAnswerCard
+    , suiteAnswerCardInDeck
+    , suiteGetDue
+    , suiteGetLeeches
+    , suiteJson
+    )
 
 import Array exposing (Array)
 import Array.Extra
 import Basics.Extra exposing (flip)
 import Expect exposing (Expectation, FloatingPointTolerance(..))
-import Fuzz exposing (Fuzzer, andMap, array, constant, floatRange, int, intRange, map, map2, map3, map4, map5, oneOf)
+import Fuzz
+    exposing
+        ( Fuzzer
+        , andMap
+        , array
+        , constant
+        , floatRange
+        , int
+        , intRange
+        , map
+        , map2
+        , map3
+        , map4
+        , map5
+        , oneOf
+        )
 import Json.Decode as Decode
 import Json.Encode as Encode
 import List.Extra
 import Random
-import SpacedRepetition.Internal.SMTwoAnki exposing (Days, Ease, Lapses, Minutes, QueueStatus(..), Step(..), TimeInterval(..), createEase, createLapses, createStep, createTimeIntervalInDays, createTimeIntervalInMinutes, easeToFloat, lapsesToInt, minutesToDayInterval, stepToInt, timeIntervalToDays, timeIntervalToMinutes)
-import SpacedRepetition.SMTwoAnki exposing (AnkiSettings, Answer(..), SRSData, answerCard, answerCardInDeck, decoderSRSData, encoderSRSData, getDueCardIndices, getLeeches)
+import SpacedRepetition.Internal.SMTwoAnki
+    exposing
+        ( Days
+        , Ease
+        , Lapses
+        , Minutes
+        , QueueStatus(..)
+        , Step(..)
+        , TimeInterval(..)
+        , createEase
+        , createLapses
+        , createStep
+        , createTimeIntervalInDays
+        , createTimeIntervalInMinutes
+        , easeToFloat
+        , lapsesToInt
+        , minutesToDayInterval
+        , stepToInt
+        , timeIntervalToDays
+        , timeIntervalToMinutes
+        )
+import SpacedRepetition.SMTwoAnki
+    exposing
+        ( AnkiSettings
+        , Answer(..)
+        , SRSData
+        , answerCard
+        , answerCardInDeck
+        , decoderAnkiSettings
+        , decoderSRSData
+        , encoderAnkiSettings
+        , encoderSRSData
+        , getDueCardIndices
+        , getLeeches
+        )
 import Test exposing (Test, describe, fuzz, fuzz2, fuzz3)
 import Time
 import Time.Extra exposing (Interval(..), diff)
@@ -384,6 +438,17 @@ suiteJson =
                     encoderSRSData d
                         |> Decode.decodeValue decoderSRSData
                         |> Expect.equal (Ok d)
+            , fuzz fuzzSettings "Encode AnkiSettings to string" <|
+                \s ->
+                    Encode.encode 0
+                        (Encode.object [ ( "settings", encoderAnkiSettings s ) ])
+                        |> Decode.decodeString (Decode.field "settings" decoderAnkiSettings)
+                        |> Expect.equal (Ok s)
+            , fuzz fuzzSettings "Encode AnkiSettings to value" <|
+                \s ->
+                    encoderAnkiSettings s
+                        |> Decode.decodeValue decoderAnkiSettings
+                        |> Expect.equal (Ok s)
             ]
         ]
 
@@ -1002,11 +1067,7 @@ suiteGetDue =
                         Array.toList <| Array.filter (\c -> not <| List.member c dueDeck) deck.cards
 
                     isDue c =
-                        if overdueAmount deck.settings time c.srsData >= 0 then
-                            True
-
-                        else
-                            False
+                        overdueAmount deck.settings time c.srsData >= 0
                 in
                 notDue
                     |> List.Extra.count isDue
@@ -1018,11 +1079,7 @@ suiteGetDue =
                         List.filterMap (\( i, _ ) -> Array.get i deck.cards) <| getDueCardIndices time deck
 
                     isNotDue c =
-                        if overdueAmount deck.settings time c.srsData >= -20 then
-                            False
-
-                        else
-                            True
+                        overdueAmount deck.settings time c.srsData < -20
                 in
                 dueDeck
                     |> List.Extra.count isNotDue
@@ -1116,39 +1173,20 @@ suiteGetDue =
                         else
                             case c.srsData of
                                 Review _ _ _ lapses ->
-                                    if lapsesToInt lapses >= deck.settings.leechThreshold then
-                                        True
-
-                                    else
-                                        False
+                                    lapsesToInt lapses >= deck.settings.leechThreshold
 
                                 Lapsed _ _ _ _ lapses ->
-                                    if lapsesToInt lapses >= deck.settings.leechThreshold then
-                                        True
-
-                                    else
-                                        False
+                                    lapsesToInt lapses >= deck.settings.leechThreshold
 
                                 _ ->
                                     False
 
                     leechCheck ( c, leechStatus ) goodSort =
-                        let
-                            good =
-                                if goodSort then
-                                    True
-
-                                else
-                                    False
-
-                            bad =
-                                False
-                        in
                         if isLeech c == leechStatus then
-                            good
+                            goodSort
 
                         else
-                            bad
+                            False
                 in
                 dueDeck
                     |> List.foldl leechCheck True
@@ -1172,18 +1210,10 @@ suiteGetLeeches =
                         else
                             case c.srsData of
                                 Review _ _ _ lapses ->
-                                    if lapsesToInt lapses >= deck.settings.leechThreshold then
-                                        True
-
-                                    else
-                                        False
+                                    lapsesToInt lapses >= deck.settings.leechThreshold
 
                                 Lapsed _ _ _ _ lapses ->
-                                    if lapsesToInt lapses >= deck.settings.leechThreshold then
-                                        True
-
-                                    else
-                                        False
+                                    lapsesToInt lapses >= deck.settings.leechThreshold
 
                                 _ ->
                                     False
@@ -1207,18 +1237,10 @@ suiteGetLeeches =
                         else
                             case c.srsData of
                                 Review _ _ _ lapses ->
-                                    if lapsesToInt lapses >= deck.settings.leechThreshold then
-                                        True
-
-                                    else
-                                        False
+                                    lapsesToInt lapses >= deck.settings.leechThreshold
 
                                 Lapsed _ _ _ _ lapses ->
-                                    if lapsesToInt lapses >= deck.settings.leechThreshold then
-                                        True
-
-                                    else
-                                        False
+                                    lapsesToInt lapses >= deck.settings.leechThreshold
 
                                 _ ->
                                     False

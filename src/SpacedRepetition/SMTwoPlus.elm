@@ -280,11 +280,7 @@ isDue time card =
             True
 
         Just f ->
-            if f >= 1 then
-                True
-
-            else
-                False
+            f >= 1
 
 
 scheduleCard : Maybe IncorrectSchedulingFunction -> Time.Posix -> Float -> Float -> Card a -> Card a

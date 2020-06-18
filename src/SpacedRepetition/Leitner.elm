@@ -389,11 +389,7 @@ isDue settings time { srsData } =
             False
 
         BoxN box lastReviewed ->
-            if overdueAmount settings time lastReviewed box >= 1 then
-                True
-
-            else
-                False
+            overdueAmount settings time lastReviewed box >= 1
 
 
 overdueAmount : LeitnerSettings -> Time.Posix -> Time.Posix -> Int -> Float

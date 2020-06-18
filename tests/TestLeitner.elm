@@ -1,15 +1,46 @@
-module TestLeitner exposing (suiteAnswerCard, suiteAnswerCardInDeck, suiteGetDue, suiteJson)
+module TestLeitner exposing
+    ( suiteAnswerCard
+    , suiteAnswerCardInDeck
+    , suiteGetDue
+    , suiteJson
+    )
 
 import Array exposing (Array)
 import Array.Extra
 import Expect exposing (FloatingPointTolerance(..))
-import Fuzz exposing (Fuzzer, array, constant, int, intRange, map, map2, map3, oneOf)
+import Fuzz
+    exposing
+        ( Fuzzer
+        , array
+        , constant
+        , int
+        , intRange
+        , map
+        , map2
+        , map3
+        , oneOf
+        )
 import Json.Decode as Decode
 import Json.Encode as Encode
 import List.Extra
 import Random
 import SpacedRepetition.Internal.Leitner exposing (Box(..), NumberOfBoxes(..))
-import SpacedRepetition.Leitner exposing (Answer(..), LeitnerSettings, OnIncorrect(..), SRSData, SpacingFunction, answerCard, answerCardInDeck, decoderSRSData, doubleSpacing, encoderSRSData, fibonacciSpacing, getDueCardIndices, numberOfBoxes)
+import SpacedRepetition.Leitner
+    exposing
+        ( Answer(..)
+        , LeitnerSettings
+        , OnIncorrect(..)
+        , SRSData
+        , SpacingFunction
+        , answerCard
+        , answerCardInDeck
+        , decoderSRSData
+        , doubleSpacing
+        , encoderSRSData
+        , fibonacciSpacing
+        , getDueCardIndices
+        , numberOfBoxes
+        )
 import Test exposing (Test, describe, fuzz, fuzz2, fuzz3)
 import Time
 import Time.Extra exposing (Interval(..), diff)
@@ -365,11 +396,7 @@ suiteGetDue =
                                 False
 
                             BoxN box reviewed ->
-                                if overdueAmount box reviewed >= 1 then
-                                    True
-
-                                else
-                                    False
+                                overdueAmount box reviewed >= 1
                 in
                 notDue
                     |> List.Extra.count isDue
@@ -399,11 +426,7 @@ suiteGetDue =
                                 False
 
                             BoxN box reviewed ->
-                                if overdueAmount box reviewed >= 1 then
-                                    True
-
-                                else
-                                    False
+                                overdueAmount box reviewed >= 1
 
                     isNotDue c =
                         not <| isDue c

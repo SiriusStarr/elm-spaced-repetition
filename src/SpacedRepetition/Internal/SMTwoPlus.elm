@@ -1,4 +1,14 @@
-module SpacedRepetition.Internal.SMTwoPlus exposing (Difficulty, Interval, PerformanceRating(..), ReviewHistory(..), createDifficulty, createInterval, difficultyToFloat, intervalToFloat, performanceRatingToFloat)
+module SpacedRepetition.Internal.SMTwoPlus exposing
+    ( Difficulty
+    , Interval
+    , PerformanceRating(..)
+    , ReviewHistory(..)
+    , createDifficulty
+    , createInterval
+    , difficultyToFloat
+    , intervalToFloat
+    , performanceRatingToFloat
+    )
 
 import Round exposing (roundNum)
 import Time

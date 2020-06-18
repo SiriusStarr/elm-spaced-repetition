@@ -294,11 +294,7 @@ isDue time { srsData } =
             True
 
         Reviewed _ reviewed streak ->
-            if overdueAmount time reviewed (streakToInterval streak) >= 0 then
-                True
-
-            else
-                False
+            overdueAmount time reviewed (streakToInterval streak) >= 0
 
 
 updateCardEFactor : EFactor -> Card a -> Card a

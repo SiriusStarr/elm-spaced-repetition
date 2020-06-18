@@ -1,4 +1,23 @@
-module SpacedRepetition.Internal.SMTwoAnki exposing (Days(..), Ease, Lapses, Minutes(..), QueueStatus(..), Step, TimeInterval(..), createEase, createLapses, createStep, createTimeIntervalInDays, createTimeIntervalInMinutes, easeToFloat, lapsesToInt, minutesToDayInterval, stepToInt, timeIntervalToDays, timeIntervalToMinutes)
+module SpacedRepetition.Internal.SMTwoAnki exposing
+    ( Days(..)
+    , Ease
+    , Lapses
+    , Minutes(..)
+    , QueueStatus(..)
+    , Step
+    , TimeInterval(..)
+    , createEase
+    , createLapses
+    , createStep
+    , createTimeIntervalInDays
+    , createTimeIntervalInMinutes
+    , easeToFloat
+    , lapsesToInt
+    , minutesToDayInterval
+    , stepToInt
+    , timeIntervalToDays
+    , timeIntervalToMinutes
+    )
 
 import Time
 

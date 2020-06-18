@@ -1,15 +1,54 @@
-module TestSMTwoPlus exposing (suiteAnswerCard, suiteAnswerCardInDeck, suiteGetDue, suiteJson)
+module TestSMTwoPlus exposing
+    ( suiteAnswerCard
+    , suiteAnswerCardInDeck
+    , suiteGetDue
+    , suiteJson
+    )
 
 import Array exposing (Array)
 import Array.Extra
 import Expect exposing (FloatingPointTolerance(..))
-import Fuzz exposing (Fuzzer, array, constant, floatRange, int, intRange, map, map2, map3, map4, oneOf)
+import Fuzz
+    exposing
+        ( Fuzzer
+        , array
+        , constant
+        , floatRange
+        , int
+        , intRange
+        , map
+        , map2
+        , map3
+        , map4
+        , oneOf
+        )
 import Json.Decode as Decode
 import Json.Encode as Encode
 import List.Extra
 import Random
-import SpacedRepetition.Internal.SMTwoPlus exposing (Difficulty, PerformanceRating(..), ReviewHistory(..), createDifficulty, createInterval, difficultyToFloat, intervalToFloat, performanceRatingToFloat)
-import SpacedRepetition.SMTwoPlus exposing (Card, SRSData, answerCard, answerCardInDeck, decoderSRSData, encoderSRSData, getDueCardIndices, oneMinusReciprocalDiffWeightSquared, performanceRating)
+import SpacedRepetition.Internal.SMTwoPlus
+    exposing
+        ( Difficulty
+        , PerformanceRating(..)
+        , ReviewHistory(..)
+        , createDifficulty
+        , createInterval
+        , difficultyToFloat
+        , intervalToFloat
+        , performanceRatingToFloat
+        )
+import SpacedRepetition.SMTwoPlus
+    exposing
+        ( Card
+        , SRSData
+        , answerCard
+        , answerCardInDeck
+        , decoderSRSData
+        , encoderSRSData
+        , getDueCardIndices
+        , oneMinusReciprocalDiffWeightSquared
+        , performanceRating
+        )
 import Test exposing (Test, describe, fuzz, fuzz2, fuzz3)
 import Time
 import Time.Extra exposing (Interval(..), diff)
@@ -125,11 +164,7 @@ isDue time c =
             True
 
         Just f ->
-            if f >= 1 then
-                True
-
-            else
-                False
+            f >= 1
 
 
 suiteJson : Test
@@ -229,11 +264,8 @@ suiteAnswerCard =
                                             if performanceRatingToFloat perf < 0.6 then
                                                 False
 
-                                            else if diff Hour Time.utc date time <= 0 then
-                                                True
-
                                             else
-                                                False
+                                                diff Hour Time.utc date time <= 0
                             in
                             case card.srsData of
                                 Reviewed _ _ _ ->
@@ -320,11 +352,8 @@ suiteAnswerCard =
                                             if performanceRatingToFloat perf < 0.6 then
                                                 False
 
-                                            else if diff Hour Time.utc date time <= 0 then
-                                                True
-
                                             else
-                                                False
+                                                diff Hour Time.utc date time <= 0
                             in
                             if performanceRatingToFloat perf >= 0.6 then
                                 if zeroPercentDue then
@@ -387,11 +416,8 @@ suiteAnswerCard =
                                             if performanceRatingToFloat perf < 0.6 then
                                                 False
 
-                                            else if diff Hour Time.utc date time <= 0 then
-                                                True
-
                                             else
-                                                False
+                                                diff Hour Time.utc date time <= 0
                             in
                             if performanceRatingToFloat perf >= 0.6 then
                                 if zeroPercentDue then
@@ -454,11 +480,8 @@ suiteAnswerCard =
                                             if performanceRatingToFloat perf < 0.6 then
                                                 False
 
-                                            else if diff Hour Time.utc date time <= 0 then
-                                                True
-
                                             else
-                                                False
+                                                diff Hour Time.utc date time <= 0
                             in
                             if performanceRatingToFloat perf >= 0.6 then
                                 if zeroPercentDue then

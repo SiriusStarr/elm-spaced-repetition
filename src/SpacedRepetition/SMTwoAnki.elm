@@ -2,7 +2,7 @@ module SpacedRepetition.SMTwoAnki exposing
     ( AnkiSettings, createSettings, setNewSteps, setGraduatingInterval, setEasyInterval, setStartingEase, setEasyBonus, setIntervalModifier, setMaximumInterval, setHardInterval, setLapseSteps, setLapseNewInterval, setLapseMinimumInterval, setLeechThreshold
     , Card, Deck
     , SRSData, newSRSData
-    , encoderSRSData, decoderSRSData
+    , encoderSRSData, decoderSRSData, encoderAnkiSettings, decoderAnkiSettings
     , Answer(..), answerCardInDeck, answerCard
     , getDueCardIndices, getLeeches
     )
@@ -99,7 +99,9 @@ Since `Card` data must necessarily be preserved between sessions, a Json encoder
     jsonToMyFlashcard str =
         Decode.decodeString myFlashcardDecoder str
 
-@docs encoderSRSData, decoderSRSData
+A Json encoder/decoder is also provided for `AnkiSettings`, since a `Deck`'s settings must be preserved between sessions.
+
+@docs encoderSRSData, decoderSRSData, encoderAnkiSettings, decoderAnkiSettings
 
 
 # Answering Cards
@@ -401,6 +403,50 @@ decoderSRSData =
         ]
 
 
+{-| `encoderAnkiSettings` provides a Json encoder for encoding `AnkiSettings` from a `Deck`.
+-}
+encoderAnkiSettings : AnkiSettings -> Encode.Value
+encoderAnkiSettings settings =
+    Encode.object
+        [ ( "newSteps", Encode.list Encode.int <| List.map timeIntervalToMinutes settings.newSteps )
+        , ( "graduatingInterval", Encode.int <| timeIntervalToDays settings.graduatingInterval )
+        , ( "easyInterval", Encode.int <| timeIntervalToDays settings.easyInterval )
+        , ( "startingEase", Encode.float settings.startingEase )
+        , ( "easyBonus", Encode.float settings.easyBonus )
+        , ( "intervalModifier", Encode.float settings.intervalModifier )
+        , ( "maximumInterval", Encode.int <| timeIntervalToDays settings.maximumInterval )
+        , ( "hardInterval", Encode.float settings.hardInterval )
+        , ( "lapseSteps", Encode.list Encode.int <| List.map timeIntervalToMinutes settings.lapseSteps )
+        , ( "lapseNewInterval", Encode.float settings.lapseNewInterval )
+        , ( "lapseMinimumInterval", Encode.int <| timeIntervalToDays settings.lapseMinimumInterval )
+        , ( "leechThreshold", Encode.int settings.leechThreshold )
+        ]
+
+
+{-| `decoderAnkiSettings` provides a Json decoder for decoding `AnkiSettings` for a `Deck`.
+-}
+decoderAnkiSettings : Decode.Decoder AnkiSettings
+decoderAnkiSettings =
+    let
+        with : (a -> b -> b) -> String -> Decode.Decoder a -> Decode.Decoder b -> Decode.Decoder b
+        with f field decoder =
+            Decode.map2 (<|) (Decode.map f <| Decode.field field decoder)
+    in
+    Decode.succeed createSettings
+        |> with setNewSteps "newSteps" (Decode.list Decode.int)
+        |> with setGraduatingInterval "graduatingInterval" Decode.int
+        |> with setEasyInterval "easyInterval" Decode.int
+        |> with setStartingEase "startingEase" Decode.float
+        |> with setEasyBonus "easyBonus" Decode.float
+        |> with setIntervalModifier "intervalModifier" Decode.float
+        |> with setMaximumInterval "maximumInterval" Decode.int
+        |> with setHardInterval "hardInterval" Decode.float
+        |> with setLapseSteps "lapseSteps" (Decode.list Decode.int)
+        |> with setLapseNewInterval "lapseNewInterval" Decode.float
+        |> with setLapseMinimumInterval "lapseMinimumInterval" Decode.int
+        |> with setLeechThreshold "leechThreshold" Decode.int
+
+
 {-| The `Answer` type represents how accurate/certain a user's response was to a card and must be passed to `answerCard` whenever a `Card` is reviewed. This package uses the same names as Anki, as presented below:
 
   - `Again` -- An incorrect response.
@@ -504,18 +550,10 @@ isLeech settings card =
     else
         case card.srsData of
             Review _ _ _ lapses ->
-                if lapsesToInt lapses >= settings.leechThreshold then
-                    True
-
-                else
-                    False
+                lapsesToInt lapses >= settings.leechThreshold
 
             Lapsed _ _ _ _ lapses ->
-                if lapsesToInt lapses >= settings.leechThreshold then
-                    True
-
-                else
-                    False
+                lapsesToInt lapses >= settings.leechThreshold
 
             _ ->
                 False
@@ -599,11 +637,7 @@ isDue settings time card =
                 ( _, minutesOverdue ) =
                     overdueAmount settings time card
             in
-            if minutesOverdue >= -20 then
-                True
-
-            else
-                False
+            minutesOverdue >= -20
 
 
 intervalToScale : AnkiSettings -> Answer -> Time.Posix -> Card a -> Int

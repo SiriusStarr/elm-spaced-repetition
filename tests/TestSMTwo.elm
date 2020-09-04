@@ -1,7 +1,8 @@
 module TestSMTwo exposing
     ( suiteAnswerCard
     , suiteAnswerCardInDeck
-    , suiteGetDue
+    , suiteGetDueCardIndices
+    , suiteGetDueCardIndicesWithDetails
     , suiteJson
     )
 
@@ -38,14 +39,17 @@ import SpacedRepetition.SMTwo
     exposing
         ( Answer(..)
         , Card
+        , QueueDetails(..)
         , SRSData
         , answerCard
         , answerCardInDeck
         , decoderSRSData
         , encoderSRSData
         , getDueCardIndices
+        , getDueCardIndicesWithDetails
         )
 import Test exposing (Test, describe, fuzz, fuzz2, fuzz3)
+import TestSMTwoPlus exposing (suiteGetDueCardIndicesWithDetails)
 import Time
 import Time.Extra exposing (Interval(..), diff)
 
@@ -500,9 +504,9 @@ suiteAnswerCardInDeck =
         ]
 
 
-suiteGetDue : Test
-suiteGetDue =
-    describe "getDue"
+suiteGetDueCardIndices : Test
+suiteGetDueCardIndices =
+    describe "getDueCardIndices"
         [ fuzz2 fuzzDeck fuzzTime "Due cards should contain all New cards" <|
             \deck time ->
                 let
@@ -644,4 +648,45 @@ suiteGetDue =
                     |> List.foldl sortCheck ( firstCard, True )
                     |> Tuple.second
                     |> Expect.true "Expected a sorted deck"
+        ]
+
+
+suiteGetDueCardIndicesWithDetails : Test
+suiteGetDueCardIndicesWithDetails =
+    describe "getDueCardIndicesWithDetails"
+        [ fuzz2 fuzzDeck fuzzTime "Queue status should be correct" <|
+            \deck time ->
+                let
+                    dueDeck =
+                        List.filterMap (\{ index, queueDetails } -> Maybe.map (\c -> ( c, queueDetails )) <| Array.get index deck) <| getDueCardIndicesWithDetails time deck
+
+                    checkQueue c =
+                        case c.srsData of
+                            Reviewed _ lastSeen streak ->
+                                ReviewQueue
+                                    { lastSeen = lastSeen
+                                    , intervalInDays = streakToInterval streak
+                                    }
+
+                            Repeating _ streak ->
+                                RepeatingQueue { intervalInDays = streakToInterval streak }
+
+                            New ->
+                                NewCard
+
+                    queueCheck ( c, queue ) goodSort =
+                        if checkQueue c == queue then
+                            goodSort
+
+                        else
+                            False
+                in
+                dueDeck
+                    |> List.foldl queueCheck True
+                    |> Expect.true "Incorrect queue status!"
+        , fuzz2 fuzzDeck fuzzTime "WithDetails should return the same indices in the same order as without" <|
+            \deck time ->
+                getDueCardIndicesWithDetails time deck
+                    |> List.map .index
+                    |> Expect.equalLists (getDueCardIndices time deck)
         ]

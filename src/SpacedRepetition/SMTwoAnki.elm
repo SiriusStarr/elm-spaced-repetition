@@ -4,7 +4,8 @@ module SpacedRepetition.SMTwoAnki exposing
     , SRSData, newSRSData
     , encoderSRSData, decoderSRSData, encoderAnkiSettings, decoderAnkiSettings
     , Answer(..), answerCardInDeck, answerCard
-    , getDueCardIndices, getLeeches
+    , getDueCardIndices, getDueCardIndicesWithDetails
+    , QueueDetails(..), getCardDetails, getLeeches
     )
 
 {-| This package provides everything necessary to create spaced repetition software using the algorithm used by the popular F/OSS program Anki. Anki's algorithm is a heavily-modified version of the SM-2 algorithm, which has been released for free public use when accompanied by the following notice:
@@ -115,7 +116,14 @@ The SM-2 Anki algorithm depends on grading answers on a scale with one incorrect
 
 Besides answering cards, this package handles determining which cards in a `Deck` are due and require answering.
 
-@docs getDueCardIndices, getLeeches
+@docs getDueCardIndices, getDueCardIndicesWithDetails
+
+
+# Card Details
+
+If you require specific details for a single card, you may use the provided functionality here. If you need details for _all_ due cards, just use `getDueCardIndicesWithDetails`. You can also get all leeches using `getLeeches`.
+
+@docs QueueDetails, getCardDetails, getLeeches
 
 -}
 
@@ -451,7 +459,7 @@ decoderAnkiSettings =
 
   - `Again` -- An incorrect response.
 
-  - `Hard` -- A correct response that was challenging to produce. Should not be presented as an option when answering cards in the Learning queue. In the Learning queue, `Hard` is merely a synonym for `Again`.
+  - `Hard` -- A correct response that was challenging to produce. It is not necessary to present this as an option for answering cards in the Learning or Lapsed queues, as it has the same effect as `Again` in those cases, namely resetting the card to the start of the queue.
 
   - `Good` -- A correct response of appropriate difficulty.
 
@@ -483,7 +491,7 @@ answerCard time answer settings card =
         |> scheduleCard settings time answer
 
 
-{-| `getDueCardIndices` takes the current time (in the `Time.Posix` format returned by the `now` task of the core `Time` module) and a `Deck` and returns the indices of the subset of the `Deck` that is due for review, as well as whether or not they are leeches (as `List (Int, Bool)`). The returned indices will be sorted in the following order:
+{-| `getDueCardIndices` takes the current time (in the `Time.Posix` format returned by the `now` task of the core `Time` module) and a `Deck` and returns the indices of the subset of the `Deck` that is due for review. The returned indices will be sorted in the following order:
 
 1.  Lapsed cards overdue for review
     1.  Cards more overdue (by proportion of interval)
@@ -499,15 +507,49 @@ answerCard time answer settings card =
 `getDueCardIndices` will show cards up to 20 minutes early, as per Anki.
 
 -}
-getDueCardIndices : Time.Posix -> Deck a b -> List ( Int, Bool )
+getDueCardIndices : Time.Posix -> Deck a b -> List Int
 getDueCardIndices time deck =
     Array.toIndexedList deck.cards
         |> List.filter
             (isDue deck.settings time << Tuple.second)
         |> List.sortWith
             (\c1 c2 -> sortDue deck.settings time (Tuple.second c1) (Tuple.second c2))
+        |> List.Extra.reverseMap Tuple.first
+
+
+{-| `getDueCardIndicesWithDetails` takes the current time (in the `Time.Posix` format returned by the `now` task of the core `Time` module) and a `Deck` and returns the subset of the `Deck` that is due for review as a list of records, providing their index, which queue they are currently in (e.g. whether they are being learned or reviewed) along with any relevant queue details, and whether or not they are leeches. The returned indices will be sorted in the following order:
+
+1.  Lapsed cards overdue for review
+    1.  Cards more overdue (by proportion of interval)
+    2.  Cards less overdue (by proportion of interval)
+2.  Review cards overdue for review
+    1.  Cards more overdue (by proportion of interval)
+    2.  Cards less overdue (by proportion of interval)
+3.  Learning cards overdue for review
+    1.  Cards more overdue (by proportion of interval)
+    2.  Cards less overdue (by proportion of interval)
+4.  Any new cards in the deck (never having been studied before).
+
+`getDueCardIndicesWithDetails` will show cards up to 20 minutes early, as per Anki.
+
+-}
+getDueCardIndicesWithDetails :
+    Time.Posix
+    -> Deck a b
+    -> List { index : Int, queueDetails : QueueDetails, isLeech : Bool }
+getDueCardIndicesWithDetails time deck =
+    Array.toIndexedList deck.cards
+        |> List.filter
+            (isDue deck.settings time << Tuple.second)
+        |> List.sortWith
+            (\c1 c2 -> sortDue deck.settings time (Tuple.second c1) (Tuple.second c2))
         |> List.Extra.reverseMap
-            (\( index, card ) -> ( index, isLeech deck.settings card ))
+            (\( index, card ) ->
+                { index = index
+                , queueDetails = getQueueDetails deck.settings card
+                , isLeech = isLeech deck.settings card
+                }
+            )
 
 
 {-| `getLeeches` takes a `Deck` and returns the indices of the subset of the `Deck` that are leeches (as `List Int`). The returned indices will be sorted in the following order:
@@ -523,6 +565,52 @@ getLeeches deck =
         |> List.sortWith
             (\( _, c1 ) ( _, c2 ) -> compare (numberOfLapses c1) (numberOfLapses c2))
         |> List.Extra.reverseMap Tuple.first
+
+
+{-| `QueueDetails` represents the current status of a card.
+
+  - `NewCard` -- A card that has never before been studied (encountered) by the user.
+
+  - `LearningQueue {...}` -- A card that is in the initial learning queue, progressing through the steps specified in `AnkiSettings.newSteps`.
+      - `lastSeen : Time.Posix` -- The date and time the card was last reviewed.
+      - `intervalInMinutes : Int` -- The interval, in minutes from the date last seen, that the card is slated for review in.
+
+  - `ReviewQueue {...}` -- A card that is being reviewed for retention.
+      - `lastSeen : Time.Posix` -- The date and time the card was last reviewed.
+      - `intervalInDays : Int` -- The interval, in days from the date last seen, that the card was slated for review in.
+      - `lapses : Int` -- The number of times the card has "lapsed," i.e. been forgotten/incorrectly answered by the user.
+
+  - `LapsedQueue {...}` -- A card that has lapsed, i.e. one that was being reviewed but was answered incorrectly and is now being re-learned.
+      - `lastSeen : Time.Posix` -- The date and time the card was last reviewed.
+      - `reviewIntervalInDays : Int` -- The interval, in days from the date last seen, that the card was slated for review in prior to last being forgotten/ answered incorrectly.
+      - `intervalInMinutes : Int` -- The interval, in minutes from the date last seen, that the card is slated for review in.
+      - `lapses : Int` -- The number of times the card has "lapsed," i.e. been forgotten/incorrectly answered by the user.
+
+-}
+type QueueDetails
+    = NewCard
+    | LearningQueue
+        { lastSeen : Time.Posix
+        , intervalInMinutes : Int
+        }
+    | ReviewQueue
+        { lastSeen : Time.Posix
+        , intervalInDays : Int
+        , lapses : Int
+        }
+    | LapsedQueue
+        { lastSeen : Time.Posix
+        , formerIntervalInDays : Int
+        , intervalInMinutes : Int
+        , lapses : Int
+        }
+
+
+{-| `getCardDetails` returns the current queue status for a given card and whether or not it is a leech. If you require this for every due card, simply use `getDueCardIndicesWithDetails`.
+-}
+getCardDetails : AnkiSettings -> Card a -> { queueDetails : QueueDetails, isLeech : Bool }
+getCardDetails s c =
+    { queueDetails = getQueueDetails s c, isLeech = isLeech s c }
 
 
 
@@ -557,6 +645,34 @@ isLeech settings card =
 
             _ ->
                 False
+
+
+getQueueDetails : AnkiSettings -> Card a -> QueueDetails
+getQueueDetails s c =
+    case c.srsData of
+        New ->
+            NewCard
+
+        Learning _ lastReviewed ->
+            LearningQueue
+                { lastSeen = lastReviewed
+                , intervalInMinutes = getCurrentIntervalInMinutes s c
+                }
+
+        Review _ interval lastReviewed lapses ->
+            ReviewQueue
+                { lastSeen = lastReviewed
+                , intervalInDays = timeIntervalToDays interval
+                , lapses = lapsesToInt lapses
+                }
+
+        Lapsed _ _ lastInterval lastReviewed lapses ->
+            LapsedQueue
+                { lastSeen = lastReviewed
+                , formerIntervalInDays = timeIntervalToDays lastInterval
+                , intervalInMinutes = getCurrentIntervalInMinutes s c
+                , lapses = lapsesToInt lapses
+                }
 
 
 sortDue : AnkiSettings -> Time.Posix -> Card a -> Card a -> Order

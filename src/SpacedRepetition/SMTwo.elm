@@ -3,7 +3,8 @@ module SpacedRepetition.SMTwo exposing
     , SRSData, newSRSData
     , encoderSRSData, decoderSRSData
     , Answer(..), answerCardInDeck, answerCard
-    , getDueCardIndices
+    , getDueCardIndices, getDueCardIndicesWithDetails
+    , QueueDetails(..), getCardDetails
     )
 
 {-| This package provides everything necessary to create spaced repetition software using the SM-2 algorithm. The SM-2 algorithm was one of the earliest computerized implementations of a spaced repetition algorithm (created in 1988 by Piotr Wozniak) and has been released for free public use when accompanied by the following notice:
@@ -93,7 +94,14 @@ The SM-2 algorithm depends on grading answers on a scale from 0-5, with 3 incorr
 
 Besides answering cards, this package handles determining which cards in a `Deck` are due and require study.
 
-@docs getDueCardIndices
+@docs getDueCardIndices, getDueCardIndicesWithDetails
+
+
+# Card Details
+
+If you require specific details for a single card, you may use the provided functionality here. If you need details for _all_ due cards, just use `getDueCardIndicesWithDetails`.
+
+@docs QueueDetails, getCardDetails
 
 -}
 
@@ -238,8 +246,74 @@ getDueCardIndices time deck =
         |> List.Extra.reverseMap Tuple.first
 
 
+{-| `getDueCardIndicesWithDetails` takes the current time (in the `Time.Posix` format returned by the `now` task of the core `Time` module) and a `Deck` and returns the subset of the `Deck` that is due for review (as a list of records), providing their index and which queue they are currently in, with any relevant queue details. While the SM-2 algorithm does not specify this, the returned indices will be sorted in the following order:
+
+1.  Cards overdue for review
+    1.  Cards more overdue (in number of days)
+    2.  Cards less overdue (in number of days)
+2.  Cards to be repeated at the end of the current session (due to poor-quality answers)
+3.  Any new cards in the deck (never having been studied before).
+
+`getDueCardIndicesWithDetails` assumes that a new day begins after 12 hours, e.g. if a card is scheduled to be studied the next day, it will become due after 12 hours of elapsed time. This can of course create edge cases where cards are reviewed too "early" if one studies very early in the morning and again late at night. Still, only very "new" cards would be affected, in which case the adverse effect is presumably minimal.
+
+-}
+getDueCardIndicesWithDetails :
+    Time.Posix
+    -> Deck a
+    -> List { index : Int, queueDetails : QueueDetails }
+getDueCardIndicesWithDetails time deck =
+    Array.toIndexedList deck
+        |> List.filter
+            (isDue time << Tuple.second)
+        |> List.sortWith
+            (\c1 c2 -> sortDue time (Tuple.second c1) (Tuple.second c2))
+        |> List.Extra.reverseMap
+            (\( index, card ) ->
+                { index = index, queueDetails = getQueueDetails card }
+            )
+
+
+{-| `QueueDetails` represents the current status of a card.
+
+  - `NewCard` -- A card that has never before been studied (encountered) by the user.
+  - `ReviewQueue {...}` -- A card that is being reviewed for retention.
+      - `lastSeen : Time.Posix` -- The date and time the card was last reviewed.
+      - `intervalInDays : Int` -- The interval, in days from the date last seen, that the card was slated for review in.
+  - `RepeatingQueue {...}` -- A card to which an unsatisfactory answer was given, slated for review before the end of the session.
+      - `intervalInDays : Int` -- The interval, in days from the date last seen, that the card was slated for review in. This will reset to the based interval (1 day) if the card was answered incorrectly.
+
+-}
+type QueueDetails
+    = NewCard
+    | ReviewQueue { lastSeen : Time.Posix, intervalInDays : Int }
+    | RepeatingQueue { intervalInDays : Int }
+
+
+{-| `getCardDetails` returns the current queue status for a given card. If you require this for every due card, simply use `getDueCardIndicesWithDetails`.
+-}
+getCardDetails : Card a -> { queueDetails : QueueDetails }
+getCardDetails c =
+    { queueDetails = getQueueDetails c }
+
+
 
 -- * Non-exposed only below here
+
+
+getQueueDetails : Card a -> QueueDetails
+getQueueDetails c =
+    case c.srsData of
+        New ->
+            NewCard
+
+        Reviewed _ priorDate streak ->
+            ReviewQueue
+                { lastSeen = priorDate
+                , intervalInDays = streakToInterval streak
+                }
+
+        Repeating _ streak ->
+            RepeatingQueue { intervalInDays = streakToInterval streak }
 
 
 sortDue : Time.Posix -> Card a -> Card a -> Order

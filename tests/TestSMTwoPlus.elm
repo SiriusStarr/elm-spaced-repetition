@@ -1,7 +1,8 @@
 module TestSMTwoPlus exposing
     ( suiteAnswerCard
     , suiteAnswerCardInDeck
-    , suiteGetDue
+    , suiteGetDueCardIndices
+    , suiteGetDueCardIndicesWithDetails
     , suiteJson
     )
 
@@ -40,12 +41,14 @@ import SpacedRepetition.Internal.SMTwoPlus
 import SpacedRepetition.SMTwoPlus
     exposing
         ( Card
+        , QueueDetails(..)
         , SRSData
         , answerCard
         , answerCardInDeck
         , decoderSRSData
         , encoderSRSData
         , getDueCardIndices
+        , getDueCardIndicesWithDetails
         , oneMinusReciprocalDiffWeightSquared
         , performanceRating
         )
@@ -667,9 +670,9 @@ suiteAnswerCardInDeck =
         ]
 
 
-suiteGetDue : Test
-suiteGetDue =
-    describe "getDue"
+suiteGetDueCardIndices : Test
+suiteGetDueCardIndices =
+    describe "getDueCardIndices"
         [ fuzz2 fuzzDeck fuzzTime "Due cards should contain all New cards" <|
             \deck time ->
                 let
@@ -761,4 +764,42 @@ suiteGetDue =
                     |> List.foldl sortCheck ( firstCard, True )
                     |> Tuple.second
                     |> Expect.true "Expected a sorted deck"
+        ]
+
+
+suiteGetDueCardIndicesWithDetails : Test
+suiteGetDueCardIndicesWithDetails =
+    describe "getDueCardIndicesWithDetails"
+        [ fuzz2 fuzzDeck fuzzTime "Queue status should be correct" <|
+            \deck time ->
+                let
+                    dueDeck =
+                        List.filterMap (\{ index, queueDetails } -> Maybe.map (\c -> ( c, queueDetails )) <| Array.get index deck) <| getDueCardIndicesWithDetails time deck
+
+                    checkQueue c =
+                        case c.srsData of
+                            Reviewed _ lastSeen interval ->
+                                ReviewQueue
+                                    { lastSeen = lastSeen
+                                    , intervalInDays = intervalToFloat interval
+                                    }
+
+                            New ->
+                                NewCard
+
+                    queueCheck ( c, queue ) goodSort =
+                        if checkQueue c == queue then
+                            goodSort
+
+                        else
+                            False
+                in
+                dueDeck
+                    |> List.foldl queueCheck True
+                    |> Expect.true "Incorrect queue status!"
+        , fuzz2 fuzzDeck fuzzTime "WithDetails should return the same indices in the same order as without" <|
+            \deck time ->
+                getDueCardIndicesWithDetails time deck
+                    |> List.map .index
+                    |> Expect.equalLists (getDueCardIndices time deck)
         ]

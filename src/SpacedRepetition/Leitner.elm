@@ -4,7 +4,8 @@ module SpacedRepetition.Leitner exposing
     , SRSData, newSRSData
     , encoderSRSData, decoderSRSData
     , Answer(..), answerCardInDeck, answerCard
-    , getDueCardIndices
+    , getDueCardIndices, getDueCardIndicesWithDetails
+    , QueueDetails(..), getCardDetails
     )
 
 {-| This package provides everything necessary to create spaced repetition software using a variant of the Leitner system. The Leitner system was proposed by Sebastian Leitner in the early 1970s and was originally intended for use with physical (paper) flashcards.
@@ -94,7 +95,14 @@ The Leitner system depends only on answers being "correct" or "incorrect." Never
 
 Besides answering cards, this package handles determining which cards in a `Deck` are due and require study.
 
-@docs getDueCardIndices
+@docs getDueCardIndices, getDueCardIndicesWithDetails
+
+
+# Card Details
+
+If you require specific details for a single card, you may use the provided functionality here. If you need details for _all_ due cards, just use `getDueCardIndicesWithDetails`.
+
+@docs QueueDetails, getCardDetails
 
 -}
 
@@ -344,8 +352,72 @@ getDueCardIndices time deck =
         |> List.Extra.reverseMap Tuple.first
 
 
+{-| `QueueDetails` represents the current status of a card.
+
+  - `NewCard` -- A card that has never before been studied (encountered) by the user.
+  - `InBox {...}` -- A card that is being reviewed for retention.
+      - `lastSeen : Time.Posix` -- The date and time the card was last reviewed.
+      - `boxNumber : Int` -- The "box" that the card is currently in (starting from `0`).
+  - `Graduated` -- A card that has been successfully graduated and thus is no longer being studied.
+
+-}
+type QueueDetails
+    = NewCard
+    | InBox { lastSeen : Time.Posix, boxNumber : Int }
+    | GraduatedCard
+
+
+{-| `getDueCardIndicesWithDetails` takes settings (`LeitnerSettings`), the current time (in the `Time.Posix` format returned by the `now` task of the core `Time` module) and a `Deck` and returns the subset of the `Deck` that is due for review (as a list of records), providing their index and which queue they are currently in, with any relevant queue details. The returned indices will be sorted in the following order:
+
+1.  Cards overdue for review
+    1.  Cards more overdue (by proportion of interval)
+    2.  Cards less overdue (by proportion of interval)
+2.  Any new cards in the deck (never having been studied before).
+
+`getDueCardIndicesWithDetails` assumes that a new day begins after 12 hours, e.g. if a card is scheduled to be studied the next day, it will come due after 12 hours of elapsed time. This can of course create edge cases where cards are reviewed too "early" if one studies very early in the morning and again late at night. Still, only very "new" cards would be affected, in which case the adverse effect is presumably minimal.
+
+-}
+getDueCardIndicesWithDetails :
+    Time.Posix
+    -> Deck a b
+    -> List { index : Int, queueDetails : QueueDetails }
+getDueCardIndicesWithDetails time deck =
+    Array.toIndexedList deck.cards
+        |> List.filter
+            (isDue deck.settings time << Tuple.second)
+        |> List.sortWith
+            (\c1 c2 -> sortDue deck.settings time (Tuple.second c1) (Tuple.second c2))
+        |> List.Extra.reverseMap
+            (\( index, card ) ->
+                { index = index, queueDetails = getQueueDetails card }
+            )
+
+
+{-| `getCardDetails` returns the current queue status for a given card. If you require this for every due card, simply use `getDueCardIndicesWithDetails`.
+-}
+getCardDetails : Card a -> { queueDetails : QueueDetails }
+getCardDetails c =
+    { queueDetails = getQueueDetails c }
+
+
 
 -- * Non-exposed only below here
+
+
+getQueueDetails : Card a -> QueueDetails
+getQueueDetails c =
+    case c.srsData of
+        New ->
+            NewCard
+
+        BoxN boxNumber lastReviewed ->
+            InBox
+                { lastSeen = lastReviewed
+                , boxNumber = boxNumber
+                }
+
+        Graduated ->
+            GraduatedCard
 
 
 sortDue : LeitnerSettings -> Time.Posix -> Card a -> Card a -> Order

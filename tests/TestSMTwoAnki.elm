@@ -2,6 +2,7 @@ module TestSMTwoAnki exposing
     ( suiteAnswerCard
     , suiteAnswerCardInDeck
     , suiteGetDue
+    , suiteGetDueWithDetails
     , suiteGetLeeches
     , suiteJson
     )
@@ -55,6 +56,7 @@ import SpacedRepetition.SMTwoAnki
     exposing
         ( AnkiSettings
         , Answer(..)
+        , QueueDetails(..)
         , SRSData
         , answerCard
         , answerCardInDeck
@@ -63,6 +65,7 @@ import SpacedRepetition.SMTwoAnki
         , encoderAnkiSettings
         , encoderSRSData
         , getDueCardIndices
+        , getDueCardIndicesWithDetails
         , getLeeches
         )
 import Test exposing (Test, describe, fuzz, fuzz2, fuzz3)
@@ -1036,12 +1039,12 @@ suiteAnswerCardInDeck =
 
 suiteGetDue : Test
 suiteGetDue =
-    describe "getDue"
+    describe "getDueCardIndices"
         [ fuzz2 fuzzDeck fuzzTime "Due cards should contain all New cards" <|
             \deck time ->
                 let
                     dueDeck =
-                        List.filterMap (\( i, _ ) -> Array.get i deck.cards) <| getDueCardIndices time deck
+                        List.filterMap (\i -> Array.get i deck.cards) <| getDueCardIndices time deck
 
                     notDue =
                         Array.toList <| Array.filter (\c -> not <| List.member c dueDeck) deck.cards
@@ -1061,7 +1064,7 @@ suiteGetDue =
             \deck time ->
                 let
                     dueDeck =
-                        List.filterMap (\( i, _ ) -> Array.get i deck.cards) <| getDueCardIndices time deck
+                        List.filterMap (\i -> Array.get i deck.cards) <| getDueCardIndices time deck
 
                     notDue =
                         Array.toList <| Array.filter (\c -> not <| List.member c dueDeck) deck.cards
@@ -1076,7 +1079,7 @@ suiteGetDue =
             \deck time ->
                 let
                     dueDeck =
-                        List.filterMap (\( i, _ ) -> Array.get i deck.cards) <| getDueCardIndices time deck
+                        List.filterMap (\i -> Array.get i deck.cards) <| getDueCardIndices time deck
 
                     isNotDue c =
                         overdueAmount deck.settings time c.srsData < -20
@@ -1088,7 +1091,7 @@ suiteGetDue =
             \deck time ->
                 let
                     dueDeck =
-                        List.filterMap (\( i, _ ) -> Array.get i deck.cards) <| getDueCardIndices time deck
+                        List.filterMap (\i -> Array.get i deck.cards) <| getDueCardIndices time deck
 
                     firstCard =
                         case List.head dueDeck of
@@ -1160,13 +1163,19 @@ suiteGetDue =
                     |> List.foldl sortCheck ( firstCard, True )
                     |> Tuple.second
                     |> Expect.true "Expected a sorted deck"
-        , fuzz2 fuzzDeck fuzzTime "Leech status should be correct" <|
+        ]
+
+
+suiteGetDueWithDetails : Test
+suiteGetDueWithDetails =
+    describe "getDueCardIndicesWithDetails"
+        [ fuzz2 fuzzDeck fuzzTime "Leech status should be correct" <|
             \deck time ->
                 let
                     dueDeck =
-                        List.filterMap (\( i, leechStatus ) -> Maybe.map (\c -> ( c, leechStatus )) <| Array.get i deck.cards) <| getDueCardIndices time deck
+                        List.filterMap (\{ index, isLeech } -> Maybe.map (\c -> ( c, isLeech )) <| Array.get index deck.cards) <| getDueCardIndicesWithDetails time deck
 
-                    isLeech c =
+                    checkIfLeech c =
                         if deck.settings.leechThreshold <= 0 then
                             False
 
@@ -1181,8 +1190,8 @@ suiteGetDue =
                                 _ ->
                                     False
 
-                    leechCheck ( c, leechStatus ) goodSort =
-                        if isLeech c == leechStatus then
+                    leechCheck ( c, isLeech ) goodSort =
+                        if checkIfLeech c == isLeech then
                             goodSort
 
                         else
@@ -1191,6 +1200,53 @@ suiteGetDue =
                 dueDeck
                     |> List.foldl leechCheck True
                     |> Expect.true "Incorrect leech status!"
+        , fuzz2 fuzzDeck fuzzTime "Queue status should be correct" <|
+            \deck time ->
+                let
+                    dueDeck =
+                        List.filterMap (\{ index, queueDetails } -> Maybe.map (\c -> ( c, queueDetails )) <| Array.get index deck.cards) <| getDueCardIndicesWithDetails time deck
+
+                    checkQueue c =
+                        case c.srsData of
+                            Lapsed _ step formerInterval lastSeen lapses ->
+                                LapsedQueue
+                                    { lastSeen = lastSeen
+                                    , formerIntervalInDays = timeIntervalToDays formerInterval
+                                    , intervalInMinutes = List.Extra.getAt (stepToInt step) deck.settings.lapseSteps |> Maybe.map timeIntervalToMinutes |> Maybe.withDefault 1
+                                    , lapses = lapsesToInt lapses
+                                    }
+
+                            Review _ interval lastSeen lapses ->
+                                ReviewQueue
+                                    { lastSeen = lastSeen
+                                    , intervalInDays = timeIntervalToDays interval
+                                    , lapses = lapsesToInt lapses
+                                    }
+
+                            New ->
+                                NewCard
+
+                            Learning step lastSeen ->
+                                LearningQueue
+                                    { lastSeen = lastSeen
+                                    , intervalInMinutes = List.Extra.getAt (stepToInt step) deck.settings.newSteps |> Maybe.map timeIntervalToMinutes |> Maybe.withDefault 1
+                                    }
+
+                    queueCheck ( c, queue ) goodSort =
+                        if checkQueue c == queue then
+                            goodSort
+
+                        else
+                            False
+                in
+                dueDeck
+                    |> List.foldl queueCheck True
+                    |> Expect.true "Incorrect queue status!"
+        , fuzz2 fuzzDeck fuzzTime "WithDetails should return the same indices in the same order as without" <|
+            \deck time ->
+                getDueCardIndicesWithDetails time deck
+                    |> List.map .index
+                    |> Expect.equalLists (getDueCardIndices time deck)
         ]
 
 

@@ -1,0 +1,39 @@
+name: Tests
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v2
+
+      - run: npm install
+
+      - name: Add elm-format and elm-test to path
+        run: echo "$(npm bin)" >> $GITHUB_PATH
+
+      - name: Setup Elm environment
+        uses: JorelAli/setup-elm@v2
+        with:
+          elm-version: 0.19.1
+
+      - name: Build
+        run: elm make
+
+      - name: Test
+        run: elm-test
+
+      - name: elm-format
+        uses: sparksp/elm-format-action@v1.0.2
+        with:
+          elm_files: |
+            src/*.elm
+            src/**/*.elm
+            tests/*.elm
+          elm_glob: true

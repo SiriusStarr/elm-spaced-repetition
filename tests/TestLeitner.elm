@@ -7,23 +7,17 @@ module TestLeitner exposing
     )
 
 import Array exposing (Array)
-import Array.Extra
-import Expect exposing (FloatingPointTolerance(..))
+import Array.Extra as ArrayX
+import Expect
 import Fuzz
     exposing
         ( Fuzzer
-        , array
-        , constant
         , int
         , intRange
-        , map
-        , map2
-        , map3
-        , oneOf
         )
 import Json.Decode as Decode
 import Json.Encode as Encode
-import List.Extra
+import List.Extra as ListX
 import Random
 import SpacedRepetition.Internal.Leitner exposing (Box(..), NumberOfBoxes(..))
 import SpacedRepetition.Leitner
@@ -51,18 +45,18 @@ import Time.Extra exposing (Interval(..), diff)
 
 fuzzOnIncorrect : Fuzzer OnIncorrect
 fuzzOnIncorrect =
-    oneOf
-        [ constant BackOneBox
-        , constant BackToStart
+    Fuzz.oneOf
+        [ Fuzz.constant BackOneBox
+        , Fuzz.constant BackToStart
         ]
 
 
 fuzzSpacing : Fuzzer SpacingFunction
 fuzzSpacing =
-    oneOf
-        [ constant fibonacciSpacing
-        , constant doubleSpacing
-        , constant alternateSpacingFunction
+    Fuzz.oneOf
+        [ Fuzz.constant fibonacciSpacing
+        , Fuzz.constant doubleSpacing
+        , Fuzz.constant alternateSpacingFunction
         ]
 
 
@@ -75,36 +69,36 @@ alternateSpacingFunction i =
 
 fuzzNumBoxes : Fuzzer NumberOfBoxes
 fuzzNumBoxes =
-    map numberOfBoxes <| intRange -1 Random.maxInt
+    Fuzz.map numberOfBoxes <| intRange -1 Random.maxInt
 
 
 fuzzSettings : Fuzzer LeitnerSettings
 fuzzSettings =
-    map3 LeitnerSettings fuzzOnIncorrect fuzzSpacing fuzzNumBoxes
+    Fuzz.map3 LeitnerSettings fuzzOnIncorrect fuzzSpacing fuzzNumBoxes
 
 
 fuzzSRSData : Fuzzer SRSData
 fuzzSRSData =
-    oneOf
-        [ constant New
-        , map2 BoxN (intRange -1 Random.maxInt) fuzzTime
-        , constant Graduated
+    Fuzz.oneOf
+        [ Fuzz.constant New
+        , Fuzz.map2 BoxN (intRange -1 Random.maxInt) fuzzTime
+        , Fuzz.constant Graduated
         ]
 
 
 fuzzTime : Fuzzer Time.Posix
 fuzzTime =
-    map (\i -> Time.millisToPosix (1000 * i)) (intRange 1 Random.maxInt)
+    Fuzz.map (\i -> Time.millisToPosix (1000 * i)) (intRange 1 Random.maxInt)
 
 
 fuzzCard : Fuzzer { srsData : SRSData }
 fuzzCard =
-    map (\d -> { srsData = d }) fuzzSRSData
+    Fuzz.map (\d -> { srsData = d }) fuzzSRSData
 
 
 fuzzExtendedCard : Fuzzer { srsData : SRSData, unrelatedField : Int }
 fuzzExtendedCard =
-    map2 (\d i -> { srsData = d, unrelatedField = i }) fuzzSRSData int
+    Fuzz.map2 (\d i -> { srsData = d, unrelatedField = i }) fuzzSRSData int
 
 
 fuzzDeck :
@@ -117,23 +111,23 @@ fuzzDeck =
         makeDeck c s =
             { cards = c, settings = s }
     in
-    map2 makeDeck (array fuzzCard) fuzzSettings
+    Fuzz.map2 makeDeck (Fuzz.array fuzzCard) fuzzSettings
 
 
 fuzzAnswer : Fuzzer Answer
 fuzzAnswer =
-    oneOf
-        [ constant Correct
-        , constant Incorrect
-        , constant Pass
-        , map MoveBoxes int
-        , constant BackToFirstBox
+    Fuzz.oneOf
+        [ Fuzz.constant Correct
+        , Fuzz.constant Incorrect
+        , Fuzz.constant Pass
+        , Fuzz.map MoveBoxes int
+        , Fuzz.constant BackToFirstBox
         ]
 
 
 fuzzResponse : Fuzzer ( Time.Posix, Answer, LeitnerSettings )
 fuzzResponse =
-    map3 (\t a s -> ( t, a, s )) fuzzTime fuzzAnswer fuzzSettings
+    Fuzz.map3 (\t a s -> ( t, a, s )) fuzzTime fuzzAnswer fuzzSettings
 
 
 {-| Tests for Json encoding/decoding.
@@ -301,8 +295,8 @@ suiteAnswerCardInDeck =
                     updatedDeck =
                         answerCardInDeck time answer index deck
                 in
-                Array.Extra.zip deck.cards updatedDeck.cards
-                    |> Array.Extra.indexedMapToList
+                ArrayX.zip deck.cards updatedDeck.cards
+                    |> ArrayX.indexedMapToList
                         (\i ( c1, c2 ) ->
                             if i == index then
                                 True
@@ -352,7 +346,7 @@ suiteGetDueCardIndices =
                                 False
                 in
                 notDue
-                    |> List.Extra.count isNew
+                    |> ListX.count isNew
                     |> Expect.equal 0
         , fuzz2 fuzzDeck fuzzTime "Due cards should not contain Graduated cards" <|
             \deck time ->
@@ -369,7 +363,7 @@ suiteGetDueCardIndices =
                                 False
                 in
                 dueDeck
-                    |> List.Extra.count isGraduated
+                    |> ListX.count isGraduated
                     |> Expect.equal 0
         , fuzz2 fuzzDeck fuzzTime "Due cards should contain all cards that are due" <|
             \deck time ->
@@ -402,7 +396,7 @@ suiteGetDueCardIndices =
                                 overdueAmount box reviewed >= 1
                 in
                 notDue
-                    |> List.Extra.count isDue
+                    |> ListX.count isDue
                     |> Expect.equal 0
         , fuzz2 fuzzDeck fuzzTime "Due cards should not contain cards that are not due" <|
             \deck time ->
@@ -435,7 +429,7 @@ suiteGetDueCardIndices =
                         not <| isDue c
                 in
                 dueDeck
-                    |> List.Extra.count isNotDue
+                    |> ListX.count isNotDue
                     |> Expect.equal 0
         , fuzz2 fuzzDeck fuzzTime "Due cards should be sorted." <|
             \deck time ->

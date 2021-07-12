@@ -107,10 +107,10 @@ If you require specific details for a single card, you may use the provided func
 -}
 
 import Array exposing (Array)
-import Array.Extra as A
+import Array.Extra as ArrayX
 import Json.Decode as Decode
 import Json.Encode as Encode
-import List.Extra
+import List.Extra as ListX
 import SpacedRepetition.Internal.Leitner exposing (Box(..), NumberOfBoxes(..))
 import Time
 import Time.Extra exposing (Interval(..), diff)
@@ -270,7 +270,7 @@ answerCardInDeck : Time.Posix -> Answer -> Int -> Deck a b -> Deck a b
 answerCardInDeck time answer index deck =
     { deck
         | cards =
-            A.update index (answerCard time answer deck.settings) deck.cards
+            ArrayX.update index (answerCard time answer deck.settings) deck.cards
     }
 
 
@@ -349,7 +349,7 @@ getDueCardIndices time deck =
             (isDue deck.settings time << Tuple.second)
         |> List.sortWith
             (\c1 c2 -> sortDue deck.settings time (Tuple.second c1) (Tuple.second c2))
-        |> List.Extra.reverseMap Tuple.first
+        |> ListX.reverseMap Tuple.first
 
 
 {-| `QueueDetails` represents the current status of a card.
@@ -387,7 +387,7 @@ getDueCardIndicesWithDetails time deck =
             (isDue deck.settings time << Tuple.second)
         |> List.sortWith
             (\c1 c2 -> sortDue deck.settings time (Tuple.second c1) (Tuple.second c2))
-        |> List.Extra.reverseMap
+        |> ListX.reverseMap
             (\( index, card ) ->
                 { index = index, queueDetails = getQueueDetails card }
             )

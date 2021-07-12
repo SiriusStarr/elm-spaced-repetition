@@ -15,7 +15,7 @@ jobs:
 
       - run: npm install
 
-      - name: Add elm-format and elm-test to path
+      - name: Add elm-format, elm-review, and elm-test to path
         run: echo "$(npm bin)" >> $GITHUB_PATH
 
       - name: Setup Elm environment
@@ -37,3 +37,8 @@ jobs:
             src/**/*.elm
             tests/*.elm
           elm_glob: true
+
+      - name: elm-review
+        uses: sparksp/elm-review-action@v1.0.6
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

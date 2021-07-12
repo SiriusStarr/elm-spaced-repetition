@@ -7,24 +7,18 @@ module TestSMTwo exposing
     )
 
 import Array exposing (Array)
-import Array.Extra
+import Array.Extra as ArrayX
 import Expect exposing (FloatingPointTolerance(..))
 import Fuzz
     exposing
         ( Fuzzer
-        , array
-        , constant
         , floatRange
         , int
         , intRange
-        , map
-        , map2
-        , map3
-        , oneOf
         )
 import Json.Decode as Decode
 import Json.Encode as Encode
-import List.Extra
+import List.Extra as ListX
 import Random
 import SpacedRepetition.Internal.SMTwo
     exposing
@@ -49,52 +43,51 @@ import SpacedRepetition.SMTwo
         , getDueCardIndicesWithDetails
         )
 import Test exposing (Test, describe, fuzz, fuzz2, fuzz3)
-import TestSMTwoPlus exposing (suiteGetDueCardIndicesWithDetails)
 import Time
 import Time.Extra exposing (Interval(..), diff)
 
 
 fuzzEFactor : Fuzzer EFactor
 fuzzEFactor =
-    map eFactor (floatRange 0 1000)
+    Fuzz.map eFactor (floatRange 0 1000)
 
 
 fuzzStreak : Fuzzer Streak
 fuzzStreak =
-    oneOf
-        [ constant Zero
-        , constant One
-        , map TwoPlus <| intRange 6 Random.maxInt
+    Fuzz.oneOf
+        [ Fuzz.constant Zero
+        , Fuzz.constant One
+        , Fuzz.map TwoPlus <| intRange 6 Random.maxInt
         ]
 
 
 fuzzSRSData : Fuzzer SRSData
 fuzzSRSData =
-    oneOf
-        [ constant New
-        , map3 Reviewed fuzzEFactor fuzzTime fuzzStreak
-        , map2 Repeating fuzzEFactor fuzzStreak
+    Fuzz.oneOf
+        [ Fuzz.constant New
+        , Fuzz.map3 Reviewed fuzzEFactor fuzzTime fuzzStreak
+        , Fuzz.map2 Repeating fuzzEFactor fuzzStreak
         ]
 
 
 fuzzTime : Fuzzer Time.Posix
 fuzzTime =
-    map (\i -> Time.millisToPosix (1000 * i)) (intRange 1 Random.maxInt)
+    Fuzz.map (\i -> Time.millisToPosix (1000 * i)) (intRange 1 Random.maxInt)
 
 
 fuzzCard : Fuzzer { srsData : SRSData }
 fuzzCard =
-    map (\d -> { srsData = d }) fuzzSRSData
+    Fuzz.map (\d -> { srsData = d }) fuzzSRSData
 
 
 fuzzDeck : Fuzzer (Array { srsData : SRSData })
 fuzzDeck =
-    array fuzzCard
+    Fuzz.array fuzzCard
 
 
 fuzzExtendedCard : Fuzzer { srsData : SRSData, unrelatedField : Int }
 fuzzExtendedCard =
-    map2 (\d i -> { srsData = d, unrelatedField = i }) fuzzSRSData int
+    Fuzz.map2 (\d i -> { srsData = d, unrelatedField = i }) fuzzSRSData int
 
 
 intToAnswer : Int -> Answer
@@ -146,7 +139,7 @@ answerToInt ans =
 
 fuzzAnswer : Fuzzer Answer
 fuzzAnswer =
-    map intToAnswer <| intRange 0 5
+    Fuzz.map intToAnswer <| intRange 0 5
 
 
 eFactorFromCard : Card a -> Float
@@ -474,8 +467,8 @@ suiteAnswerCardInDeck =
                     updatedDeck =
                         answerCardInDeck time answer index deck
                 in
-                Array.Extra.zip deck updatedDeck
-                    |> Array.Extra.indexedMapToList
+                ArrayX.zip deck updatedDeck
+                    |> ArrayX.indexedMapToList
                         (\i ( c1, c2 ) ->
                             if i == index then
                                 True
@@ -525,7 +518,7 @@ suiteGetDueCardIndices =
                                 False
                 in
                 notDue
-                    |> List.Extra.count isNew
+                    |> ListX.count isNew
                     |> Expect.equal 0
         , fuzz2 fuzzDeck fuzzTime "Due cards should contain all Repeating cards" <|
             \deck time ->
@@ -545,7 +538,7 @@ suiteGetDueCardIndices =
                                 False
                 in
                 notDue
-                    |> List.Extra.count isRepeating
+                    |> ListX.count isRepeating
                     |> Expect.equal 0
         , fuzz2 fuzzDeck fuzzTime "Due cards should contain all Reviewed cards that are due" <|
             \deck time ->
@@ -568,7 +561,7 @@ suiteGetDueCardIndices =
                                 True
                 in
                 notDue
-                    |> List.Extra.count isDue
+                    |> ListX.count isDue
                     |> Expect.equal 0
         , fuzz2 fuzzDeck fuzzTime "Due cards should not contain Reviewed cards that are not due" <|
             \deck time ->
@@ -587,7 +580,7 @@ suiteGetDueCardIndices =
                             _ ->
                                 False
                 in
-                List.Extra.count isNotDue dueDeck
+                ListX.count isNotDue dueDeck
                     |> Expect.equal 0
         , fuzz2 fuzzDeck fuzzTime "Due cards should be sorted." <|
             \deck time ->

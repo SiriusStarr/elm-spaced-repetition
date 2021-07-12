@@ -8,28 +8,19 @@ module TestSMTwoAnki exposing
     )
 
 import Array exposing (Array)
-import Array.Extra
+import Array.Extra as ArrayX
 import Basics.Extra exposing (flip)
 import Expect exposing (Expectation, FloatingPointTolerance(..))
 import Fuzz
     exposing
         ( Fuzzer
-        , andMap
-        , array
-        , constant
         , floatRange
         , int
         , intRange
-        , map
-        , map2
-        , map3
-        , map4
-        , map5
-        , oneOf
         )
 import Json.Decode as Decode
 import Json.Encode as Encode
-import List.Extra
+import List.Extra as ListX
 import Random
 import SpacedRepetition.Internal.SMTwoAnki
     exposing
@@ -38,8 +29,8 @@ import SpacedRepetition.Internal.SMTwoAnki
         , Lapses
         , Minutes
         , QueueStatus(..)
-        , Step(..)
-        , TimeInterval(..)
+        , Step
+        , TimeInterval
         , createEase
         , createLapses
         , createStep
@@ -75,73 +66,73 @@ import Time.Extra exposing (Interval(..), diff)
 
 fuzzEase : Fuzzer Ease
 fuzzEase =
-    map createEase (floatRange 0 1000)
+    Fuzz.map createEase (floatRange 0 1000)
 
 
 fuzzLapses : Fuzzer Lapses
 fuzzLapses =
-    map createLapses (intRange -1 1000)
+    Fuzz.map createLapses (intRange -1 1000)
 
 
 fuzzStep : Fuzzer Step
 fuzzStep =
-    map createStep (intRange -1 1000)
+    Fuzz.map createStep (intRange -1 1000)
 
 
 fuzzTime : Fuzzer Time.Posix
 fuzzTime =
-    map (\i -> Time.millisToPosix (1000 * i)) (intRange 1 Random.maxInt)
+    Fuzz.map (\i -> Time.millisToPosix (1000 * i)) (intRange 1 Random.maxInt)
 
 
 fuzzMinuteInterval : Fuzzer (TimeInterval Minutes)
 fuzzMinuteInterval =
-    map createTimeIntervalInMinutes <| intRange 0 52560000
+    Fuzz.map createTimeIntervalInMinutes <| intRange 0 52560000
 
 
 fuzzDayInterval : Fuzzer (TimeInterval Days)
 fuzzDayInterval =
-    map createTimeIntervalInDays <| intRange 0 36500
+    Fuzz.map createTimeIntervalInDays <| intRange 0 36500
 
 
 fuzzSRSData : Fuzzer SRSData
 fuzzSRSData =
-    oneOf
-        [ constant New
-        , map2 Learning fuzzStep fuzzTime
-        , map4 Review fuzzEase fuzzDayInterval fuzzTime fuzzLapses
-        , map5 Lapsed fuzzEase fuzzStep fuzzDayInterval fuzzTime fuzzLapses
+    Fuzz.oneOf
+        [ Fuzz.constant New
+        , Fuzz.map2 Learning fuzzStep fuzzTime
+        , Fuzz.map4 Review fuzzEase fuzzDayInterval fuzzTime fuzzLapses
+        , Fuzz.map5 Lapsed fuzzEase fuzzStep fuzzDayInterval fuzzTime fuzzLapses
         ]
 
 
 fuzzCard : Fuzzer { srsData : SRSData }
 fuzzCard =
-    map (\d -> { srsData = d }) fuzzSRSData
+    Fuzz.map (\d -> { srsData = d }) fuzzSRSData
 
 
 fuzzDeck : Fuzzer { cards : Array { srsData : SRSData }, settings : AnkiSettings }
 fuzzDeck =
-    map2 (\c s -> { cards = c, settings = s }) (array fuzzCard) fuzzSettings
+    Fuzz.map2 (\c s -> { cards = c, settings = s }) (Fuzz.array fuzzCard) fuzzSettings
 
 
 fuzzSettings : Fuzzer AnkiSettings
 fuzzSettings =
-    map AnkiSettings (Fuzz.list fuzzMinuteInterval)
-        |> andMap fuzzDayInterval
-        |> andMap fuzzDayInterval
-        |> andMap (floatRange 0 1000)
-        |> andMap (floatRange 0 1000)
-        |> andMap (floatRange 0 1000)
-        |> andMap fuzzDayInterval
-        |> andMap (floatRange 0 1000)
-        |> andMap (Fuzz.list fuzzMinuteInterval)
-        |> andMap (floatRange 0 1000)
-        |> andMap fuzzDayInterval
-        |> andMap int
+    Fuzz.map AnkiSettings (Fuzz.list fuzzMinuteInterval)
+        |> Fuzz.andMap fuzzDayInterval
+        |> Fuzz.andMap fuzzDayInterval
+        |> Fuzz.andMap (floatRange 0 1000)
+        |> Fuzz.andMap (floatRange 0 1000)
+        |> Fuzz.andMap (floatRange 0 1000)
+        |> Fuzz.andMap fuzzDayInterval
+        |> Fuzz.andMap (floatRange 0 1000)
+        |> Fuzz.andMap (Fuzz.list fuzzMinuteInterval)
+        |> Fuzz.andMap (floatRange 0 1000)
+        |> Fuzz.andMap fuzzDayInterval
+        |> Fuzz.andMap int
 
 
 fuzzDiffOverdueCards : Fuzzer ( { srsData : SRSData }, { srsData : SRSData } )
 fuzzDiffOverdueCards =
-    map5
+    Fuzz.map5
         (\ease interval t1 t2 lapses ->
             ( { srsData = Review ease interval t1 lapses }
             , { srsData = Review ease interval t2 lapses }
@@ -156,7 +147,7 @@ fuzzDiffOverdueCards =
 
 fuzzAnswer : Fuzzer Answer
 fuzzAnswer =
-    map
+    Fuzz.map
         (\i ->
             case i of
                 0 ->
@@ -180,12 +171,12 @@ fuzzAnswer =
 
 fuzzResponse : Fuzzer ( Time.Posix, Answer, AnkiSettings )
 fuzzResponse =
-    map3 (\t a s -> ( t, a, s )) fuzzTime fuzzAnswer fuzzSettings
+    Fuzz.map3 (\t a s -> ( t, a, s )) fuzzTime fuzzAnswer fuzzSettings
 
 
 fuzzExtendedCard : Fuzzer { srsData : SRSData, unrelatedField : Int }
 fuzzExtendedCard =
-    map2 (\d i -> { srsData = d, unrelatedField = i }) fuzzSRSData int
+    Fuzz.map2 (\d i -> { srsData = d, unrelatedField = i }) fuzzSRSData int
 
 
 easeFloatFromCard : { srsData : SRSData } -> Maybe Float
@@ -208,12 +199,12 @@ getInterval settings srsData =
             0
 
         Learning step _ ->
-            List.Extra.getAt (stepToInt step) settings.newSteps
+            ListX.getAt (stepToInt step) settings.newSteps
                 |> Maybe.map timeIntervalToMinutes
                 |> Maybe.withDefault 1
 
         Lapsed _ step _ _ _ ->
-            List.Extra.getAt (stepToInt step) settings.lapseSteps
+            ListX.getAt (stepToInt step) settings.lapseSteps
                 |> Maybe.map timeIntervalToMinutes
                 |> Maybe.withDefault 1
 
@@ -372,7 +363,7 @@ expectReviewUpdate settings answer time oldData newData =
                         , \( _, _, l ) -> Expect.equal (lapsesToInt oldLapses) l
                         ]
     in
-    expectation <| ( floatEase, intInterval, intLapses )
+    expectation ( floatEase, intInterval, intLapses )
 
 
 boundedDayInterval : AnkiSettings -> TimeInterval Days -> TimeInterval Days
@@ -988,7 +979,7 @@ suiteAnswerCard =
 suiteAnswerCardInDeck : Test
 suiteAnswerCardInDeck =
     describe "answerCardInDeck"
-        [ fuzz3 (Fuzz.tuple ( fuzzTime, fuzzAnswer )) fuzzDeck Fuzz.int "Settings shouldn't be touched" <|
+        [ fuzz3 (Fuzz.tuple ( fuzzTime, fuzzAnswer )) fuzzDeck int "Settings shouldn't be touched" <|
             \( time, answer ) deck index ->
                 let
                     originalSettings =
@@ -1007,8 +998,8 @@ suiteAnswerCardInDeck =
                     updatedDeck =
                         answerCardInDeck time answer index deck
                 in
-                Array.Extra.zip deck.cards updatedDeck.cards
-                    |> Array.Extra.indexedMapToList
+                ArrayX.zip deck.cards updatedDeck.cards
+                    |> ArrayX.indexedMapToList
                         (\i ( c1, c2 ) ->
                             if i == index then
                                 True
@@ -1018,7 +1009,7 @@ suiteAnswerCardInDeck =
                         )
                     |> List.all identity
                     |> Expect.true "Only updated card should change in deck"
-        , fuzz3 (Fuzz.tuple ( fuzzTime, fuzzAnswer )) fuzzDeck Fuzz.int "Answering card by index should be the same as answering independently" <|
+        , fuzz3 (Fuzz.tuple ( fuzzTime, fuzzAnswer )) fuzzDeck int "Answering card by index should be the same as answering independently" <|
             \( time, answer ) deck index ->
                 let
                     originalCard =
@@ -1058,7 +1049,7 @@ suiteGetDue =
                                 False
                 in
                 notDue
-                    |> List.Extra.count isNew
+                    |> ListX.count isNew
                     |> Expect.equal 0
         , fuzz2 fuzzDeck fuzzTime "Due cards should contain all cards that are due" <|
             \deck time ->
@@ -1073,7 +1064,7 @@ suiteGetDue =
                         overdueAmount deck.settings time c.srsData >= 0
                 in
                 notDue
-                    |> List.Extra.count isDue
+                    |> ListX.count isDue
                     |> Expect.equal 0
         , fuzz2 fuzzDeck fuzzTime "Due cards should not contain any cards that are not (within 20 minutes of being) due" <|
             \deck time ->
@@ -1085,7 +1076,7 @@ suiteGetDue =
                         overdueAmount deck.settings time c.srsData < -20
                 in
                 dueDeck
-                    |> List.Extra.count isNotDue
+                    |> ListX.count isNotDue
                     |> Expect.equal 0
         , fuzz2 fuzzDeck fuzzTime "Due cards should be sorted." <|
             \deck time ->
@@ -1212,7 +1203,7 @@ suiteGetDueWithDetails =
                                 LapsedQueue
                                     { lastSeen = lastSeen
                                     , formerIntervalInDays = timeIntervalToDays formerInterval
-                                    , intervalInMinutes = List.Extra.getAt (stepToInt step) deck.settings.lapseSteps |> Maybe.map timeIntervalToMinutes |> Maybe.withDefault 1
+                                    , intervalInMinutes = ListX.getAt (stepToInt step) deck.settings.lapseSteps |> Maybe.map timeIntervalToMinutes |> Maybe.withDefault 1
                                     , lapses = lapsesToInt lapses
                                     }
 
@@ -1229,7 +1220,7 @@ suiteGetDueWithDetails =
                             Learning step lastSeen ->
                                 LearningQueue
                                     { lastSeen = lastSeen
-                                    , intervalInMinutes = List.Extra.getAt (stepToInt step) deck.settings.newSteps |> Maybe.map timeIntervalToMinutes |> Maybe.withDefault 1
+                                    , intervalInMinutes = ListX.getAt (stepToInt step) deck.settings.newSteps |> Maybe.map timeIntervalToMinutes |> Maybe.withDefault 1
                                     }
 
                     queueCheck ( c, queue ) goodSort =
@@ -1275,7 +1266,7 @@ suiteGetLeeches =
                                     False
                 in
                 leechDeck
-                    |> List.Extra.count (not << isLeech)
+                    |> ListX.count (not << isLeech)
                     |> Expect.equal 0
         , fuzz2 fuzzDeck fuzzTime "getLeeches should contain all leeches" <|
             \deck _ ->
@@ -1302,6 +1293,6 @@ suiteGetLeeches =
                                     False
                 in
                 notLeech
-                    |> List.Extra.count isLeech
+                    |> ListX.count isLeech
                     |> Expect.equal 0
         ]

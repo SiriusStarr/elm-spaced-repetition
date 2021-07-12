@@ -7,30 +7,23 @@ module TestSMTwoPlus exposing
     )
 
 import Array exposing (Array)
-import Array.Extra
+import Array.Extra as ArrayX
 import Expect exposing (FloatingPointTolerance(..))
 import Fuzz
     exposing
         ( Fuzzer
-        , array
-        , constant
         , floatRange
         , int
         , intRange
-        , map
-        , map2
-        , map3
-        , map4
-        , oneOf
         )
 import Json.Decode as Decode
 import Json.Encode as Encode
-import List.Extra
+import List.Extra as ListX
 import Random
 import SpacedRepetition.Internal.SMTwoPlus
     exposing
         ( Difficulty
-        , PerformanceRating(..)
+        , PerformanceRating
         , ReviewHistory(..)
         , createDifficulty
         , createInterval
@@ -59,25 +52,25 @@ import Time.Extra exposing (Interval(..), diff)
 
 fuzzDifficulty : Fuzzer Difficulty
 fuzzDifficulty =
-    map createDifficulty (floatRange -0.1 1.1)
+    Fuzz.map createDifficulty (floatRange -0.1 1.1)
 
 
 fuzzInterval : Fuzzer SpacedRepetition.Internal.SMTwoPlus.Interval
 fuzzInterval =
-    map createInterval <| floatRange 0 100000
+    Fuzz.map createInterval <| floatRange 0 100000
 
 
 fuzzSRSData : Fuzzer SRSData
 fuzzSRSData =
-    oneOf
-        [ constant New
-        , map3 Reviewed fuzzDifficulty fuzzTime fuzzInterval
+    Fuzz.oneOf
+        [ Fuzz.constant New
+        , Fuzz.map3 Reviewed fuzzDifficulty fuzzTime fuzzInterval
         ]
 
 
 fuzzDiffOverdueCards : Fuzzer ( { srsData : SRSData }, { srsData : SRSData } )
 fuzzDiffOverdueCards =
-    map4
+    Fuzz.map4
         (\diff t1 t2 interval ->
             ( { srsData = Reviewed diff t1 interval }
             , { srsData = Reviewed diff t2 interval }
@@ -91,27 +84,27 @@ fuzzDiffOverdueCards =
 
 fuzzTime : Fuzzer Time.Posix
 fuzzTime =
-    map (\i -> Time.millisToPosix (1000 * i)) (intRange 1 Random.maxInt)
+    Fuzz.map (\i -> Time.millisToPosix (1000 * i)) (intRange 1 Random.maxInt)
 
 
 fuzzCard : Fuzzer { srsData : SRSData }
 fuzzCard =
-    map (\d -> { srsData = d }) fuzzSRSData
+    Fuzz.map (\d -> { srsData = d }) fuzzSRSData
 
 
 fuzzDeck : Fuzzer (Array { srsData : SRSData })
 fuzzDeck =
-    array fuzzCard
+    Fuzz.array fuzzCard
 
 
 fuzzPerformance : Fuzzer PerformanceRating
 fuzzPerformance =
-    map performanceRating <| floatRange -0.1 1.1
+    Fuzz.map performanceRating <| floatRange -0.1 1.1
 
 
 fuzzExtendedCard : Fuzzer { srsData : SRSData, unrelatedField : Int }
 fuzzExtendedCard =
-    map2 (\d i -> { srsData = d, unrelatedField = i }) fuzzSRSData int
+    Fuzz.map2 (\d i -> { srsData = d, unrelatedField = i }) fuzzSRSData int
 
 
 difficultyFromCard : Card a -> Float
@@ -572,10 +565,10 @@ suiteAnswerCard =
             \time answer ( card1, card2 ) ->
                 let
                     overdueAmt1 =
-                        min 2 <| Maybe.withDefault 0 <| reviewHistoryToOverdueAmt time <| card1.srsData
+                        min 2 <| Maybe.withDefault 0 <| reviewHistoryToOverdueAmt time card1.srsData
 
                     overdueAmt2 =
-                        min 2 <| Maybe.withDefault 0 <| reviewHistoryToOverdueAmt time <| card2.srsData
+                        min 2 <| Maybe.withDefault 0 <| reviewHistoryToOverdueAmt time card2.srsData
 
                     firstInterval =
                         answerCard Nothing time answer card1
@@ -640,8 +633,8 @@ suiteAnswerCardInDeck =
                     updatedDeck =
                         answerCardInDeck Nothing time perf index deck
                 in
-                Array.Extra.zip deck updatedDeck
-                    |> Array.Extra.indexedMapToList
+                ArrayX.zip deck updatedDeck
+                    |> ArrayX.indexedMapToList
                         (\i ( c1, c2 ) ->
                             if i == index then
                                 True
@@ -651,7 +644,7 @@ suiteAnswerCardInDeck =
                         )
                     |> List.all identity
                     |> Expect.true "Only updated card should change in deck"
-        , fuzz3 (Fuzz.tuple ( fuzzTime, fuzzPerformance )) fuzzDeck Fuzz.int "Answering card by index should be the same as answering independently" <|
+        , fuzz3 (Fuzz.tuple ( fuzzTime, fuzzPerformance )) fuzzDeck int "Answering card by index should be the same as answering independently" <|
             \( time, perf ) deck index ->
                 let
                     originalCard =
@@ -691,7 +684,7 @@ suiteGetDueCardIndices =
                                 False
                 in
                 notDue
-                    |> List.Extra.count isNew
+                    |> ListX.count isNew
                     |> Expect.equal 0
         , fuzz2 fuzzDeck fuzzTime "Due cards should contain all Reviewed cards that are due" <|
             \deck time ->
@@ -703,7 +696,7 @@ suiteGetDueCardIndices =
                         Array.toList <| Array.filter (\c -> not <| List.member c dueDeck) deck
                 in
                 notDue
-                    |> List.Extra.count (isDue time)
+                    |> ListX.count (isDue time)
                     |> Expect.equal 0
         , fuzz2 fuzzDeck fuzzTime "Due cards should not contain any Reviewed cards that are not due" <|
             \deck time ->
@@ -715,7 +708,7 @@ suiteGetDueCardIndices =
                         not << isDue time
                 in
                 dueDeck
-                    |> List.Extra.count isNotDue
+                    |> ListX.count isNotDue
                     |> Expect.equal 0
         , fuzz2 fuzzDeck fuzzTime "Due cards should be sorted." <|
             \deck time ->

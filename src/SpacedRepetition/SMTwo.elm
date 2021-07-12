@@ -106,11 +106,19 @@ If you require specific details for a single card, you may use the provided func
 -}
 
 import Array exposing (Array)
-import Array.Extra
+import Array.Extra as ArrayX
 import Json.Decode as Decode
 import Json.Encode as Encode
-import List.Extra
-import SpacedRepetition.Internal.SMTwo exposing (EFactor, ReviewHistory(..), Streak(..), eFactor, eFactorToFloat, streakToInterval)
+import List.Extra as ListX
+import SpacedRepetition.Internal.SMTwo
+    exposing
+        ( EFactor
+        , ReviewHistory(..)
+        , Streak(..)
+        , eFactor
+        , eFactorToFloat
+        , streakToInterval
+        )
 import Time
 import Time.Extra exposing (Interval(..), diff)
 
@@ -214,7 +222,7 @@ type Answer
 -}
 answerCardInDeck : Time.Posix -> Answer -> Int -> Deck a -> Deck a
 answerCardInDeck time answer i deck =
-    Array.Extra.update i (answerCard time answer) deck
+    ArrayX.update i (answerCard time answer) deck
 
 
 {-| When a card is presented to the user and answered, `answerCard` should be called with the current time (in the `Time.Posix` format returned by the `now` task of the core `Time` module) and an `Answer`. It returns the updated card, which should replace the card in the `Deck`. Use this function if you want to handle updating the `Deck` manually; otherwise, use `answerCardInDeck`. Handling the presentation of a card is the responsibility of the implementing program, as various behaviors might be desirable in different cases.
@@ -243,7 +251,7 @@ getDueCardIndices time deck =
             (isDue time << Tuple.second)
         |> List.sortWith
             (\c1 c2 -> sortDue time (Tuple.second c1) (Tuple.second c2))
-        |> List.Extra.reverseMap Tuple.first
+        |> ListX.reverseMap Tuple.first
 
 
 {-| `getDueCardIndicesWithDetails` takes the current time (in the `Time.Posix` format returned by the `now` task of the core `Time` module) and a `Deck` and returns the subset of the `Deck` that is due for review (as a list of records), providing their index and which queue they are currently in, with any relevant queue details. While the SM-2 algorithm does not specify this, the returned indices will be sorted in the following order:
@@ -267,7 +275,7 @@ getDueCardIndicesWithDetails time deck =
             (isDue time << Tuple.second)
         |> List.sortWith
             (\c1 c2 -> sortDue time (Tuple.second c1) (Tuple.second c2))
-        |> List.Extra.reverseMap
+        |> ListX.reverseMap
             (\( index, card ) ->
                 { index = index, queueDetails = getQueueDetails card }
             )

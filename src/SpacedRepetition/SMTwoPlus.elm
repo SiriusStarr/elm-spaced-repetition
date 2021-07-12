@@ -108,11 +108,20 @@ If you require specific details for a single card, you may use the provided func
 -}
 
 import Array exposing (Array)
-import Array.Extra
+import Array.Extra as ArrayX
 import Json.Decode as Decode
 import Json.Encode as Encode
-import List.Extra
-import SpacedRepetition.Internal.SMTwoPlus exposing (Interval, PerformanceRating(..), ReviewHistory(..), createDifficulty, createInterval, difficultyToFloat, intervalToFloat, performanceRatingToFloat)
+import List.Extra as ListX
+import SpacedRepetition.Internal.SMTwoPlus
+    exposing
+        ( Interval
+        , ReviewHistory(..)
+        , createDifficulty
+        , createInterval
+        , difficultyToFloat
+        , intervalToFloat
+        , performanceRatingToFloat
+        )
 import Time
 import Time.Extra as TimeExtra
 
@@ -189,14 +198,14 @@ type alias PerformanceRating =
 -}
 performanceRating : Float -> PerformanceRating
 performanceRating f =
-    PerformanceRating <| clamp 0.0 1.0 f
+    SpacedRepetition.Internal.SMTwoPlus.PerformanceRating <| clamp 0.0 1.0 f
 
 
 {-| `answerCardInDeck` functions analogously to `answerCard` but handles maintenance of the `Deck`, which is typically what one would desire. When a card is presented to the user and answered, `answerCardInDeck` should be called with a `Maybe IncorrectSchedulingFunction`, the current time (in the `Time.Posix` format returned by the `now` task of the core `Time` module), a `PerformanceRating`, the index of the card in the `Deck`, and the `Deck` itself. It returns the updated `Deck`. Use this function if you simply want to store a `Deck` and not worry about updating it manually (which is most likely what you want). Otherwise, use `answerCard` to handle updating the `Deck` manually. Handling the presentation of a card is the responsibility of the implementing program, as various behaviors might be desirable in different cases. Note that if an invalid (out of bounds) index is passed, the `Deck` is returned unaltered. `IncorrectSchedulingFunction` may be provided to fix the issue with scheduling incorrect cards inherent in the algorithm. If `Nothing` is provided, the algorithm-specified `1 / diffWeight ^ 2` scaling is used that results in questionable behavior.
 -}
 answerCardInDeck : Maybe IncorrectSchedulingFunction -> Time.Posix -> PerformanceRating -> Int -> Deck a -> Deck a
 answerCardInDeck scheduleFunc time perf i deck =
-    Array.Extra.update i (answerCard scheduleFunc time perf) deck
+    ArrayX.update i (answerCard scheduleFunc time perf) deck
 
 
 {-| When a card is presented to the user and answered, `answerCard` should be called with a `Maybe IncorrectSchedulingFunction`, the current time (in the `Time.Posix` format returned by the `now` task of the core `Time` module) and an `PerformanceRating`. It returns the updated card, which should replace the card in the `Deck`. Use this function if you want to handle updating the `Deck` manually; otherwise, use `answerCardInDeck`. Handling the presentation of a card is the responsibility of the implementing program, as various behaviors might be desirable in different cases. `IncorrectSchedulingFunction` may be provided to fix the issue with scheduling incorrect cards inherent in the algorithm. If `Nothing` is provided, the algorithm-specified `1 / diffWeight ^ 2` scaling is used that results in questionable behavior.
@@ -252,7 +261,7 @@ getDueCardIndices time deck =
             (isDue time << Tuple.second)
         |> List.sortWith
             (\c1 c2 -> sortDue time (Tuple.second c1) (Tuple.second c2))
-        |> List.Extra.reverseMap Tuple.first
+        |> ListX.reverseMap Tuple.first
 
 
 {-| `getDueCardIndicesWithDetails` takes the current time (in the `Time.Posix` format returned by the `now` task of the core `Time` module) and a `Deck` and returns the the subset of the `Deck` that is due for review (as a list of records), providing their index and which queue they are currently in, with any relevant queue details. The returned indices will be sorted in the following order:
@@ -275,7 +284,7 @@ getDueCardIndicesWithDetails time deck =
             (isDue time << Tuple.second)
         |> List.sortWith
             (\c1 c2 -> sortDue time (Tuple.second c1) (Tuple.second c2))
-        |> List.Extra.reverseMap
+        |> ListX.reverseMap
             (\( index, card ) ->
                 { index = index, queueDetails = getQueueDetails card }
             )

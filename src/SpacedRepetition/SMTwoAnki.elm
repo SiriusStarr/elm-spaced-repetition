@@ -128,12 +128,32 @@ If you require specific details for a single card, you may use the provided func
 -}
 
 import Array exposing (Array)
-import Array.Extra
+import Array.Extra as ArrayX
 import Json.Decode as Decode
 import Json.Encode as Encode
-import List.Extra
+import List.Extra as ListX
 import Random
-import SpacedRepetition.Internal.SMTwoAnki exposing (Days(..), Ease, Lapses, Minutes(..), QueueStatus(..), Step, TimeInterval(..), createEase, createLapses, createStep, createTimeIntervalInDays, createTimeIntervalInMinutes, easeToFloat, lapsesToInt, minutesToDayInterval, stepToInt, timeIntervalToDays, timeIntervalToMinutes)
+import SpacedRepetition.Internal.SMTwoAnki
+    exposing
+        ( Days
+        , Ease
+        , Lapses
+        , Minutes
+        , QueueStatus(..)
+        , Step
+        , TimeInterval(..)
+        , createEase
+        , createLapses
+        , createStep
+        , createTimeIntervalInDays
+        , createTimeIntervalInMinutes
+        , easeToFloat
+        , lapsesToInt
+        , minutesToDayInterval
+        , stepToInt
+        , timeIntervalToDays
+        , timeIntervalToMinutes
+        )
 import Time
 import Time.Extra exposing (Interval(..), diff)
 
@@ -479,7 +499,7 @@ answerCardInDeck : Time.Posix -> Answer -> Int -> Deck a b -> Deck a b
 answerCardInDeck time answer i deck =
     { deck
         | cards =
-            Array.Extra.update i (answerCard time answer deck.settings) deck.cards
+            ArrayX.update i (answerCard time answer deck.settings) deck.cards
     }
 
 
@@ -514,7 +534,7 @@ getDueCardIndices time deck =
             (isDue deck.settings time << Tuple.second)
         |> List.sortWith
             (\c1 c2 -> sortDue deck.settings time (Tuple.second c1) (Tuple.second c2))
-        |> List.Extra.reverseMap Tuple.first
+        |> ListX.reverseMap Tuple.first
 
 
 {-| `getDueCardIndicesWithDetails` takes the current time (in the `Time.Posix` format returned by the `now` task of the core `Time` module) and a `Deck` and returns the subset of the `Deck` that is due for review as a list of records, providing their index, which queue they are currently in (e.g. whether they are being learned or reviewed) along with any relevant queue details, and whether or not they are leeches. The returned indices will be sorted in the following order:
@@ -543,7 +563,7 @@ getDueCardIndicesWithDetails time deck =
             (isDue deck.settings time << Tuple.second)
         |> List.sortWith
             (\c1 c2 -> sortDue deck.settings time (Tuple.second c1) (Tuple.second c2))
-        |> List.Extra.reverseMap
+        |> ListX.reverseMap
             (\( index, card ) ->
                 { index = index
                 , queueDetails = getQueueDetails deck.settings card
@@ -564,7 +584,7 @@ getLeeches deck =
         |> List.filter (isLeech deck.settings << Tuple.second)
         |> List.sortWith
             (\( _, c1 ) ( _, c2 ) -> compare (numberOfLapses c1) (numberOfLapses c2))
-        |> List.Extra.reverseMap Tuple.first
+        |> ListX.reverseMap Tuple.first
 
 
 {-| `QueueDetails` represents the current status of a card.
@@ -1045,12 +1065,12 @@ getCurrentIntervalInMinutes settings { srsData } =
             0
 
         Learning step _ ->
-            List.Extra.getAt (stepToInt step) settings.newSteps
+            ListX.getAt (stepToInt step) settings.newSteps
                 |> Maybe.map timeIntervalToMinutes
                 |> Maybe.withDefault 1
 
         Lapsed _ step _ _ _ ->
-            List.Extra.getAt (stepToInt step) settings.lapseSteps
+            ListX.getAt (stepToInt step) settings.lapseSteps
                 |> Maybe.map timeIntervalToMinutes
                 |> Maybe.withDefault 1
 

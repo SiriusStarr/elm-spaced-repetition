@@ -84,7 +84,5 @@ eFactor f =
 {-| Unwrap the opaque type `EFactor`.
 -}
 eFactorToFloat : EFactor -> Float
-eFactorToFloat e =
-    case e of
-        EFactor f ->
-            f
+eFactorToFloat (EFactor f) =
+    f

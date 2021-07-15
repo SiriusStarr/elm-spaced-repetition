@@ -115,6 +115,7 @@ import SpacedRepetition.Internal.SMTwo
         ( EFactor
         , ReviewHistory(..)
         , Streak(..)
+        , defaultEFactor
         , eFactor
         , eFactorToFloat
         , streakToInterval
@@ -442,7 +443,7 @@ scheduleCard time answer card =
         ( newEF, incrementStreak ) =
             case card.srsData of
                 New ->
-                    ( eFactor 2.5, One )
+                    ( defaultEFactor, One )
 
                 Reviewed eF _ streak ->
                     case streak of

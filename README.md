@@ -1,6 +1,6 @@
 # SpacedRepetition
 
-[![Build Status](https://travis-ci.com/SiriusStarr/elm-spaced-repetition.svg?branch=master)](https://travis-ci.com/SiriusStarr/elm-spaced-repetition)
+[![Build Status](https://github.com/SiriusStarr/elm-spaced-repetition/actions/workflows/ci.yml/badge.svg)](https://github.com/SiriusStarr/elm-spaced-repetition/actions/workflows/ci.yml)
 
 ## Introduction
 

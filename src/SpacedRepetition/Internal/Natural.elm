@@ -1,4 +1,4 @@
-module SpacedRepetition.Internal.Natural exposing (Natural, decode, encode, fromInt, nil, succ, toInt)
+module SpacedRepetition.Internal.Natural exposing (Natural, compare, decode, encode, fromInt, nil, pred, succ, toInt)
 
 import Json.Decode as Decode exposing (Decoder)
 import Json.Encode as Encode
@@ -24,6 +24,13 @@ succ (Natural i) =
     Natural <| i + 1
 
 
+{-| Get the number before the current one, or stay at zero.
+-}
+pred : Natural -> Natural
+pred (Natural i) =
+    Natural <| max 0 <| i - 1
+
+
 {-| Convert an `Int` to a `Natural` or fail.
 -}
 fromInt : Int -> Maybe Natural
@@ -40,6 +47,20 @@ fromInt i =
 toInt : Natural -> Int
 toInt (Natural i) =
     i
+
+
+{-| Compare to naturals and return an ordering.
+-}
+compare : Natural -> Natural -> Order
+compare (Natural i) (Natural j) =
+    if i < j then
+        LT
+
+    else if i > j then
+        GT
+
+    else
+        EQ
 
 
 {-| JSON encoder for `Natural`.

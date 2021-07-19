@@ -1,5 +1,5 @@
 module SpacedRepetition.Leitner exposing
-    ( LeitnerSettings, OnIncorrect(..), SpacingFunction, doubleSpacing, fibonacciSpacing, numberOfBoxes
+    ( LeitnerSettings, OnIncorrect(..), SpacingFunction, doubleSpacing, fibonacciSpacing, numberOfBoxes, NumberOfBoxes
     , Card, Deck
     , SRSData, newSRSData
     , encoderSRSData, decoderSRSData
@@ -17,7 +17,7 @@ For the basics about this algorithm, please refer to the [following description]
 
 This algorithm requires certain settings be provided when functions are called to specify the behavior of the (very general) system.
 
-@docs LeitnerSettings, OnIncorrect, SpacingFunction, doubleSpacing, fibonacciSpacing, numberOfBoxes
+@docs LeitnerSettings, OnIncorrect, SpacingFunction, doubleSpacing, fibonacciSpacing, numberOfBoxes, NumberOfBoxes
 
 
 # Cards and Decks
@@ -111,17 +111,19 @@ import Array.Extra as ArrayX
 import Json.Decode as Decode
 import Json.Encode as Encode
 import List.Extra as ListX
-import SpacedRepetition.Internal.Leitner exposing (Box(..), NumberOfBoxes(..))
+import SpacedRepetition.Internal.Leitner exposing (Box(..), highestBoxIndex)
+import SpacedRepetition.Internal.Natural as Natural exposing (Natural)
+import SpacedRepetition.Internal.Time as Time
 import Time
 import Time.Extra exposing (Interval(..), diff)
 
 
-{-| `LeitnerSettings` customizes the behavior of this algorithm. Three parameters must be defined: the behavior of the system upon an incorrect answer, the spacing (interval) between "boxes", and the total number of boxes before a card "graduates." No builder functions are provided, as only three settings exist and the Leitner system doesn't have "defaults" to speak of.
+{-| `LeitnerSettings` customizes the behavior of this algorithm. Three parameters must be defined: the behavior of the system upon an incorrect answer, the spacing (interval) between "boxes", and the total number of boxes before a card "graduates." No builder functions are provided, as only three settings exist and the Leitner system doesn't have "defaults" to speak of. Additionally, no JSON encoder/decoder is provided because serializing functions (for `SpacingFunction`) is non-trivial.
 -}
 type alias LeitnerSettings =
-    { onIncorrect : OnIncorrect
-    , boxSpacing : SpacingFunction
+    { boxSpacing : SpacingFunction
     , numBoxes : NumberOfBoxes
+    , onIncorrect : OnIncorrect
     }
 
 
@@ -132,7 +134,7 @@ type OnIncorrect
     | BackToStart
 
 
-{-| `SpacingFunction` takes an integer argument, representing the box number, and returns an integer representing the interval in days that cards in that box should go between reviews. Note that box numbering starts at `0`, and intervals will always be at least 1 day (regardless of the output of a `SpacingFunction`). A custom function may be provided, or the pre-made functions `doubleSpacing` or `fibonacciSpacing` may be used. For obvious reasons, care should be taken that the complexity/recursive depth/etc. does not become excessive within the number of boxes your system will use.
+{-| `SpacingFunction` takes an integer argument, representing the box number, and returns an integer representing the interval in days that cards in that box should go between reviews. **Note that box numbering starts at zero** (`0`), and intervals will always be at least 1 day (regardless of the output of a `SpacingFunction`). A custom function may be provided, or the pre-made functions `doubleSpacing` or `fibonacciSpacing` may be used. For obvious reasons, care should be taken that the complexity/recursive depth/etc. does not become excessive within the number of boxes your system will use.
 -}
 type alias SpacingFunction =
     Int -> Int
@@ -146,34 +148,38 @@ doubleSpacing boxNumber =
     2 ^ boxNumber
 
 
-{-| `fibonacciSpacing` is a `SpacingFunction` with which the interval between each box follows the Fibonacci sequence, e.g. Box 0 has an interval of `1`, Box 1 of `1`, Box 2 of `2`, Box 3 of `3`, Box 4 of `5`, Box 5 of `8`, Box 6 of `13`, etc. Note that the interval caps at Box 18, with an interval of more than 10 years (4181 days). A 4181 interval will be used for all boxes from 18 on.
+{-| `fibonacciSpacing` is a `SpacingFunction` with which the interval between each box follows the Fibonacci sequence, e.g. Box 0 has an interval of `1`, Box 1 of `1`, Box 2 of `2`, Box 3 of `3`, Box 4 of `5`, Box 5 of `8`, Box 6 of `13`, etc.
 -}
 fibonacciSpacing : SpacingFunction
 fibonacciSpacing box =
-    case box of
-        0 ->
-            1
+    let
+        go : Int -> Int -> Int -> Int
+        go n a b =
+            case n of
+                0 ->
+                    a
 
-        1 ->
-            1
+                1 ->
+                    b
 
-        _ ->
-            if box < 0 then
-                1
-
-            else if box < 19 then
-                fibonacciSpacing (box - 1) + fibonacciSpacing (box - 2)
-
-            else
-                -- Cap once we cross 10 years, because does anyone really need longer intervals than that?
-                4181
+                _ ->
+                    go (n - 1) b (a + b)
+    in
+    go (1 + box) 0 1
 
 
-{-| `numberOfBoxes` may be used to specify the total number of boxes before a card "graduates" (i.e. is no longer reviewed). It takes an integer as a parameter, specifying a system with that integer number of boxes. There must, of course, be at least 1 box in the system (and there should almost certainly be more).
+{-| `numberOfBoxes` may be used to specify the total number of boxes before a card "graduates" (i.e. is no longer reviewed). It takes an integer as a parameter, specifying a system with that integer number of boxes. There must, of course, be at least 1 box in the system (and there should almost certainly be more), so values `< 1` will be ignored and result in a system with only one box.
 -}
 numberOfBoxes : Int -> NumberOfBoxes
-numberOfBoxes i =
-    NumberOfBoxes <| max 1 i
+numberOfBoxes =
+    SpacedRepetition.Internal.Leitner.numberOfBoxes
+
+
+{-| The maximum number of boxes in the Leitner system, beyond which cards will
+be graduated, as created by `numberOfBoxes`.
+-}
+type alias NumberOfBoxes =
+    SpacedRepetition.Internal.Leitner.NumberOfBoxes
 
 
 {-| A `Card` represents a single question or unit of knowledge that the user will review. In general terms, each would represent a single flashcard. `Card` is defined as an extensible record; as such, whatever necessary custom fields are required for a use case may simply be included in the record, e.g.:
@@ -217,17 +223,17 @@ newSRSData =
 encoderSRSData : SRSData -> Encode.Value
 encoderSRSData data =
     case data of
-        New ->
-            Encode.null
+        BoxN { box, lastReviewed } ->
+            Encode.object
+                [ ( "boxNum", Natural.encode box )
+                , ( "reviewDate", Time.encode lastReviewed )
+                ]
 
         Graduated ->
             Encode.string "G"
 
-        BoxN box date ->
-            Encode.object
-                [ ( "boxNum", Encode.int box )
-                , ( "reviewDate", Encode.int <| Time.posixToMillis date // 1000 ) -- Encode time in seconds; loss of precision is acceptable
-                ]
+        New ->
+            Encode.null
 
 
 {-| `decoderSRSData` provides a Json decoder for decoding `SRSData` for a `Card`.
@@ -246,22 +252,35 @@ decoderSRSData =
                         _ ->
                             Decode.fail "Invalid SRS Data."
                 )
-        , Decode.map2 BoxN
-            (Decode.field "boxNum" Decode.int)
-            (Decode.map (\t -> Time.millisToPosix <| t * 1000) <|
-                Decode.field "reviewDate" Decode.int
-            )
+        , Decode.map2 (\box lastReviewed -> BoxN { box = box, lastReviewed = lastReviewed })
+            (Decode.field "boxNum" Natural.decode)
+            (Decode.field "reviewDate" Time.decode)
         ]
 
 
-{-| `Answer` must be passed to `answerCard`/`answerCardInDeck` when the user answers a card. It is usually best to simply use `Correct` and `Incorrect` (which follow the behavior specified in `LeitnerSettings`), but one could potentially provide the user with more options. `Pass` will leave the card in its current box. `MoveBoxes` allows one to specify the number of boxes to move the card, with positive integers advancing the card (typically meaning longer intervals, depending on the `SpacingFunction`) and negative integers moving the card back. The card will simply go in the first box or graduate if the provided `Int` results in a new box less than zero or greater than the number of boxes. `MoveBoxes 0` is identical to `Pass`. `BackToFirstBox` resets the card fully and begins learning anew.
+{-| `Answer` must be passed to `answerCard`/`answerCardInDeck` when the user answers a card. It is usually best to simply use `Correct` and `Incorrect` (which follow the behavior specified in `LeitnerSettings`), but one could potentially provide the user with more options.
+
+  - `Correct` -- The card was answered correctly, so advance it one step.
+  - `Incorrect` -- The card was answered incorrectly; the box behavior depends
+    on `OnIncorrect`.
+  - `Pass` -- Leave the card in its current box; this will however graduate a
+    card if it is in an invalid box larger than `NumberOfBoxes` (due e.g. to
+    settings being changed).
+  - `MoveBoxes i` -- Specify the number of boxes to move the card, with positive
+    integers advancing the card (typically meaning longer intervals, depending
+    on the `SpacingFunction`) and negative integers moving the card back. The
+    card will simply go in the first box or graduate if the provided `Int`
+    results in a new box less than zero or greater than the number of boxes.
+    `MoveBoxes 0` is identical to `Pass`.
+  - `BackToFirstBox` -- Reset the card fully and begins learning anew.
+
 -}
 type Answer
-    = Correct
+    = BackToFirstBox
+    | Correct
     | Incorrect
-    | Pass
     | MoveBoxes Int
-    | BackToFirstBox
+    | Pass
 
 
 {-| `answerCardInDeck` functions analogously to `answerCard` but handles maintenance of the `Deck`, which is typically what one would desire. When a card is presented to the user and answered, `answerCardInDeck` should be called with the current time (in the `Time.Posix` format returned by the `now` task of the core `Time` module), an `Answer`, the index of the card in the `Deck` (e.g. what is returned by the `getDueCardIndices` function), and the `Deck` itself. It returns the updated `Deck`. Use this function if you simply want to store a `Deck` and not worry about updating it manually (which is most likely what you want). Otherwise, use `answerCard` to handle updating the `Deck` manually. Handling the presentation of a card is the responsibility of the implementing program, as various behaviors might be desirable in different cases. Note that if an invalid (out of bounds) index is passed, the `Deck` is returned unaltered.
@@ -277,59 +296,52 @@ answerCardInDeck time answer index deck =
 {-| When a card is presented to the user and answered, `answerCard` should be called with the current time (in the `Time.Posix` format returned by the `now` task of the core `Time` module), an `Answer`, and `LeitnerSettings`. It returns the updated card, which should replace the card in the `Deck`. Use this function if you want to handle updating the `Deck` manually; otherwise, use `answerCardInDeck`, which is much more convenient. Handling the presentation of a card is the responsibility of the implementing program, as various behaviors might be desirable in different cases.
 -}
 answerCard : Time.Posix -> Answer -> LeitnerSettings -> Card a -> Card a
-answerCard time answer { onIncorrect, numBoxes } card =
+answerCard time answer { numBoxes, onIncorrect } card =
     let
+        currentBox : Natural
         currentBox =
             case card.srsData of
-                New ->
-                    0
+                BoxN { box } ->
+                    box
 
                 Graduated ->
-                    maxBoxes
+                    Natural.succ <| highestBoxIndex numBoxes
 
-                BoxN boxNum _ ->
-                    -- Things that are over max boxes or <0 will get fixed when answered.
-                    clamp 0 maxBoxes boxNum
+                New ->
+                    Natural.nil
 
-        maxBoxes =
-            case numBoxes of
-                NumberOfBoxes i ->
-                    i
-
-        clampBox newBox =
-            if newBox >= maxBoxes then
-                Graduated
+        setBox : Natural -> Card a
+        setBox n =
+            if Natural.compare n (highestBoxIndex numBoxes) == GT then
+                { card | srsData = Graduated }
 
             else
-                BoxN (max 0 newBox) time
-
-        changeBox amount =
-            { card | srsData = clampBox <| currentBox + amount }
-
-        firstBox =
-            { card | srsData = BoxN 0 time }
+                { card | srsData = BoxN { box = n, lastReviewed = time } }
     in
     case answer of
+        BackToFirstBox ->
+            setBox Natural.nil
+
         Correct ->
-            changeBox 1
+            setBox <| Natural.succ currentBox
 
         Incorrect ->
             case onIncorrect of
                 BackOneBox ->
-                    changeBox -1
+                    setBox <| Natural.pred currentBox
 
                 BackToStart ->
-                    firstBox
-
-        Pass ->
-            -- Passing on a card still puts it in the first box if it's New
-            changeBox 0
+                    setBox Natural.nil
 
         MoveBoxes i ->
-            changeBox i
+            Natural.toInt currentBox
+                |> (+) i
+                |> Natural.fromInt
+                |> Maybe.withDefault Natural.nil
+                |> setBox
 
-        BackToFirstBox ->
-            firstBox
+        Pass ->
+            setBox currentBox
 
 
 {-| `getDueCardIndices` takes settings (`LeitnerSettings`), the current time (in the `Time.Posix` format returned by the `now` task of the core `Time` module) and a `Deck` and returns the indices of the subset of the `Deck` that is due for review (as `List Int`). The returned indices will be sorted in the following order:
@@ -356,15 +368,15 @@ getDueCardIndices time deck =
 
   - `NewCard` -- A card that has never before been studied (encountered) by the user.
   - `InBox {...}` -- A card that is being reviewed for retention.
-      - `lastSeen : Time.Posix` -- The date and time the card was last reviewed.
+      - `lastReviewed : Time.Posix` -- The date and time the card was last reviewed.
       - `boxNumber : Int` -- The "box" that the card is currently in (starting from `0`).
   - `Graduated` -- A card that has been successfully graduated and thus is no longer being studied.
 
 -}
 type QueueDetails
-    = NewCard
-    | InBox { lastSeen : Time.Posix, boxNumber : Int }
-    | GraduatedCard
+    = GraduatedCard
+    | InBox { boxNumber : Int, lastReviewed : Time.Posix }
+    | NewCard
 
 
 {-| `getDueCardIndicesWithDetails` takes settings (`LeitnerSettings`), the current time (in the `Time.Posix` format returned by the `now` task of the core `Time` module) and a `Deck` and returns the subset of the `Deck` that is due for review (as a list of records), providing their index and which queue they are currently in, with any relevant queue details. The returned indices will be sorted in the following order:
@@ -404,22 +416,27 @@ getCardDetails c =
 -- * Non-exposed only below here
 
 
+{-| Given a card, return its current box status.
+-}
 getQueueDetails : Card a -> QueueDetails
 getQueueDetails c =
     case c.srsData of
-        New ->
-            NewCard
-
-        BoxN boxNumber lastReviewed ->
+        BoxN { box, lastReviewed } ->
             InBox
-                { lastSeen = lastReviewed
-                , boxNumber = boxNumber
+                { boxNumber = Natural.toInt box
+                , lastReviewed = lastReviewed
                 }
 
         Graduated ->
             GraduatedCard
 
+        New ->
+            NewCard
 
+
+{-| Sort two cards based on which is more due to be studied (more due coming
+first).
+-}
 sortDue : LeitnerSettings -> Time.Posix -> Card a -> Card a -> Order
 sortDue settings time c1 c2 =
     case ( c1.srsData, c2.srsData ) of
@@ -436,43 +453,55 @@ sortDue settings time c1 c2 =
         ( New, New ) ->
             EQ
 
-        ( New, BoxN _ _ ) ->
+        ( New, BoxN _ ) ->
             LT
 
-        ( BoxN _ _, New ) ->
+        ( BoxN _, New ) ->
             GT
 
         -- If neither is new, then rank "more due" cards first (by proportion past due).  EQ case doesn't matter, since order becomes irrelevant then.
-        ( BoxN box1 reviewedOn1, BoxN box2 reviewedOn2 ) ->
-            if overdueAmount settings time reviewedOn1 box1 >= overdueAmount settings time reviewedOn2 box2 then
+        ( BoxN b1, BoxN b2 ) ->
+            if
+                overdueAmount settings time b1.lastReviewed b1.box
+                    >= overdueAmount settings time b2.lastReviewed b2.box
+            then
                 GT
 
             else
                 LT
 
 
+{-| Check if a card is currently due to be studied.
+-}
 isDue : LeitnerSettings -> Time.Posix -> Card a -> Bool
 isDue settings time { srsData } =
     case srsData of
-        New ->
-            True
+        BoxN { box, lastReviewed } ->
+            overdueAmount settings time lastReviewed box >= 1
 
         Graduated ->
             False
 
-        BoxN box lastReviewed ->
-            overdueAmount settings time lastReviewed box >= 1
+        New ->
+            True
 
 
-overdueAmount : LeitnerSettings -> Time.Posix -> Time.Posix -> Int -> Float
+{-| Given the current time, the time a card was last reviewed, and the box
+number, determine what proportion overdue the card is, i.e. `0.9` is 90% of the
+way to being overdue and `2` is the interval again overdue.
+-}
+overdueAmount : LeitnerSettings -> Time.Posix -> Time.Posix -> Natural -> Float
 overdueAmount { boxSpacing } time lastReviewed box =
     let
+        boxInterval : Int
         boxInterval =
-            if box > 0 then
-                boxSpacing box
+            if box == Natural.nil then
+                1
 
             else
-                1
+                Natural.toInt box
+                    |> boxSpacing
+                    |> max 1
 
         dayDiff : Float
         dayDiff =

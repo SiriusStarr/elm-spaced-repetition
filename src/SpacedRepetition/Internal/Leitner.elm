@@ -1,35 +1,46 @@
-module SpacedRepetition.Internal.Leitner exposing (Box(..), NumberOfBoxes(..))
+module SpacedRepetition.Internal.Leitner exposing (Box(..), NumberOfBoxes, highestBoxIndex, numberOfBoxes)
 
+import SpacedRepetition.Internal.Natural as Natural exposing (Natural)
 import Time
-
-
-{-| Descriptive alias for the date the card was last reviewed.
--}
-type alias LastReviewed =
-    Time.Posix
-
-
-{-| Descriptive alias for which box a card is in.
--}
-type alias BoxNumber =
-    Int
 
 
 {-| The current box that a card is in:
 
   - `New` -- Never studied.
-  - `BoxN number lastReviewed` -- Card is in box `number` and was last studied `lastReviewed`.
+  - `BoxN {box, lastReviewed}` -- Card is in box `box` and was last studied `lastReviewed`.
   - `Graduated` -- Card has exceeded the maximum number of boxes and is finished.
 
 -}
 type Box
-    = BoxN BoxNumber LastReviewed
+    = BoxN { box : Natural, lastReviewed : Time.Posix }
     | Graduated
     | New
 
 
+{-| Get the index of the highest box in the system, given the `NumberOfBoxes`.
+-}
+highestBoxIndex : NumberOfBoxes -> Natural
+highestBoxIndex (HighestBoxIndex n) =
+    n
+
+
 {-| The maximum number of boxes in the Leitner system, beyond which cards will
-be graduated.
+be graduated, as created by `numberOfBoxes`.
 -}
 type NumberOfBoxes
-    = NumberOfBoxes Int
+    = HighestBoxIndex Natural
+
+
+{-| `numberOfBoxes` may be used to specify the total number of boxes before a
+card "graduates" (i.e. is no longer reviewed). It takes an integer as a
+parameter, specifying a system with that integer number of boxes. There must,
+of course, be at least 1 box in the system (and there should almost certainly
+be more).
+-}
+numberOfBoxes : Int -> NumberOfBoxes
+numberOfBoxes =
+    max 1
+        >> Natural.fromInt
+        >> Maybe.withDefault Natural.nil
+        >> Natural.pred
+        >> HighestBoxIndex

@@ -8,7 +8,7 @@ module TestLeitner exposing
 
 import Array exposing (Array)
 import Array.Extra as ArrayX
-import Expect
+import Expect exposing (Expectation)
 import Fuzz
     exposing
         ( Fuzzer
@@ -19,11 +19,14 @@ import Json.Decode as Decode
 import Json.Encode as Encode
 import List.Extra as ListX
 import Random
-import SpacedRepetition.Internal.Leitner exposing (Box(..), NumberOfBoxes(..))
+import SpacedRepetition.Internal.Leitner exposing (Box(..), highestBoxIndex)
+import SpacedRepetition.Internal.Natural as Natural exposing (Natural)
 import SpacedRepetition.Leitner
     exposing
         ( Answer(..)
+        , Card
         , LeitnerSettings
+        , NumberOfBoxes
         , OnIncorrect(..)
         , QueueDetails(..)
         , SRSData
@@ -43,6 +46,8 @@ import Time
 import Time.Extra exposing (Interval(..), diff)
 
 
+{-| Fuzz `OnIncorrect` behavior.
+-}
 fuzzOnIncorrect : Fuzzer OnIncorrect
 fuzzOnIncorrect =
     Fuzz.oneOf
@@ -51,6 +56,8 @@ fuzzOnIncorrect =
         ]
 
 
+{-| Fuzz a `SpacingFunction`.
+-}
 fuzzSpacing : Fuzzer SpacingFunction
 fuzzSpacing =
     Fuzz.oneOf
@@ -67,53 +74,93 @@ alternateSpacingFunction i =
     i + 1
 
 
+{-| Fuzz the number of boxes in the system.
+-}
 fuzzNumBoxes : Fuzzer NumberOfBoxes
 fuzzNumBoxes =
     Fuzz.map numberOfBoxes <| intRange -1 Random.maxInt
 
 
+{-| Fuzz `LeitnerSettings`.
+-}
 fuzzSettings : Fuzzer LeitnerSettings
 fuzzSettings =
-    Fuzz.map3 LeitnerSettings fuzzOnIncorrect fuzzSpacing fuzzNumBoxes
+    Fuzz.map3
+        (\boxSpacing numBoxes onIncorrect ->
+            { boxSpacing = boxSpacing
+            , numBoxes = numBoxes
+            , onIncorrect = onIncorrect
+            }
+        )
+        fuzzSpacing
+        fuzzNumBoxes
+        fuzzOnIncorrect
 
 
+{-| Fuzz data for a card.
+-}
 fuzzSRSData : Fuzzer SRSData
 fuzzSRSData =
     Fuzz.oneOf
         [ Fuzz.constant New
-        , Fuzz.map2 BoxN (intRange -1 Random.maxInt) fuzzTime
+        , Fuzz.map2
+            (\box lastReviewed ->
+                BoxN
+                    { box = box
+                    , lastReviewed = lastReviewed
+                    }
+            )
+            fuzzNatural
+            fuzzTime
         , Fuzz.constant Graduated
         ]
 
 
+{-| Fuzz a natural number.
+-}
+fuzzNatural : Fuzzer Natural
+fuzzNatural =
+    intRange 0 1000
+        |> Fuzz.map Natural.fromInt
+        |> Fuzz.map (Maybe.withDefault Natural.nil)
+
+
+{-| Fuzz a time.
+-}
 fuzzTime : Fuzzer Time.Posix
 fuzzTime =
     Fuzz.map (\i -> Time.millisToPosix (1000 * i)) (intRange 1 Random.maxInt)
 
 
+{-| Fuzz a `SRSData` for a card.
+-}
 fuzzCard : Fuzzer { srsData : SRSData }
 fuzzCard =
     Fuzz.map (\d -> { srsData = d }) fuzzSRSData
 
 
+{-| Fuzz a `SRSData` for a card with other fields.
+-}
 fuzzExtendedCard : Fuzzer { srsData : SRSData, unrelatedField : Int }
 fuzzExtendedCard =
     Fuzz.map2 (\d i -> { srsData = d, unrelatedField = i }) fuzzSRSData int
 
 
+{-| Fuzz a `Deck` of cards.
+-}
 fuzzDeck :
     Fuzzer
         { cards : Array { srsData : SRSData }
         , settings : LeitnerSettings
         }
 fuzzDeck =
-    let
-        makeDeck c s =
-            { cards = c, settings = s }
-    in
-    Fuzz.map2 makeDeck (Fuzz.array fuzzCard) fuzzSettings
+    Fuzz.map2 (\c s -> { cards = c, settings = s })
+        (Fuzz.array fuzzCard)
+        fuzzSettings
 
 
+{-| Fuzz a review answer.
+-}
 fuzzAnswer : Fuzzer Answer
 fuzzAnswer =
     Fuzz.oneOf
@@ -125,6 +172,8 @@ fuzzAnswer =
         ]
 
 
+{-| Fuzz a full user response, with settings, time, and answer.
+-}
 fuzzResponse : Fuzzer ( Time.Posix, Answer, LeitnerSettings )
 fuzzResponse =
     Fuzz.map3 (\t a s -> ( t, a, s )) fuzzTime fuzzAnswer fuzzSettings
@@ -151,7 +200,7 @@ suiteJson =
         ]
 
 
-{-| Tests for answerCard.
+{-| Tests for `answerCard`.
 -}
 suiteAnswerCard : Test
 suiteAnswerCard =
@@ -160,47 +209,37 @@ suiteAnswerCard =
             \( time, answer, settings ) card ->
                 answerCard time answer settings card
                     |> .srsData
-                    |> (\box ->
-                            case box of
-                                New ->
-                                    Expect.fail "Card was still 'new' after answering"
-
-                                _ ->
-                                    Expect.pass
-                       )
+                    |> Expect.notEqual New
         , fuzz2 fuzzResponse fuzzCard "Time reviewed should be updated" <|
             \( time, answer, settings ) card ->
                 answerCard time answer settings card
-                    |> .srsData
-                    |> (\box ->
-                            case box of
-                                New ->
-                                    Expect.fail "Card was still 'new' after answering"
+                    |> (\c ->
+                            case c.srsData of
+                                BoxN { lastReviewed } ->
+                                    Expect.equal time lastReviewed
 
                                 Graduated ->
                                     Expect.pass
 
-                                BoxN _ reviewedTime ->
-                                    Expect.equal time reviewedTime
+                                New ->
+                                    Expect.fail "Card was still 'new' after answering"
                        )
         , fuzz2 fuzzResponse fuzzCard "Box should never be < 0 or greater than max boxes" <|
             \( time, answer, settings ) card ->
                 answerCard time answer settings card
-                    |> .srsData
-                    |> (\box ->
+                    |> (\c ->
                             let
+                                maxBox : Int
                                 maxBox =
-                                    case settings.numBoxes of
-                                        NumberOfBoxes i ->
-                                            i
+                                    Natural.toInt <| highestBoxIndex settings.numBoxes
                             in
-                            case box of
-                                BoxN boxNum _ ->
-                                    Expect.all
-                                        [ Expect.atLeast 0
-                                        , Expect.lessThan maxBox
-                                        ]
-                                        boxNum
+                            case c.srsData of
+                                BoxN { box } ->
+                                    Natural.toInt box
+                                        |> Expect.all
+                                            [ Expect.atLeast 0
+                                            , Expect.atMost maxBox
+                                            ]
 
                                 _ ->
                                     Expect.pass
@@ -209,261 +248,214 @@ suiteAnswerCard =
             \( time, answer, settings ) card ->
                 answerCard time answer settings card
                     |> .srsData
-                    |> (\box ->
+                    |> (\data ->
                             let
+                                maxBox : Natural
                                 maxBox =
-                                    case settings.numBoxes of
-                                        NumberOfBoxes i ->
-                                            i
+                                    highestBoxIndex settings.numBoxes
 
+                                oldBox : Natural
                                 oldBox =
                                     case card.srsData of
-                                        BoxN boxNum _ ->
-                                            -- Things that are over max boxes or <0 will get fixed when answered.
-                                            clamp 0 maxBox boxNum
-
-                                        New ->
-                                            0
+                                        BoxN { box } ->
+                                            box
 
                                         Graduated ->
-                                            maxBox
+                                            Natural.succ maxBox
 
+                                        New ->
+                                            Natural.nil
+
+                                newBox : Natural
                                 newBox =
-                                    case box of
-                                        BoxN boxNum _ ->
-                                            boxNum
-
-                                        New ->
-                                            -1
+                                    case data of
+                                        BoxN { box } ->
+                                            box
 
                                         Graduated ->
-                                            maxBox
+                                            Natural.succ maxBox
 
+                                        New ->
+                                            Natural.nil
+
+                                expectMoved : Int -> Expectation
                                 expectMoved i =
-                                    Expect.equal (clamp 0 maxBox <| oldBox + i) newBox
+                                    Expect.equal
+                                        (Natural.toInt oldBox
+                                            + i
+                                            -- Graduate cards that are over max boxes
+                                            |> min (1 + Natural.toInt maxBox)
+                                            |> Natural.fromInt
+                                            |> Maybe.withDefault Natural.nil
+                                        )
+                                        newBox
 
+                                expectFirstBox : Expectation
                                 expectFirstBox =
-                                    Expect.equal 0 newBox
+                                    Expect.equal Natural.nil newBox
                             in
-                            case answer of
-                                Correct ->
+                            case ( answer, settings.onIncorrect ) of
+                                ( BackToFirstBox, _ ) ->
+                                    expectFirstBox
+
+                                ( Correct, _ ) ->
                                     expectMoved 1
 
-                                Incorrect ->
-                                    case settings.onIncorrect of
-                                        BackOneBox ->
-                                            expectMoved -1
+                                ( Incorrect, BackOneBox ) ->
+                                    expectMoved -1
 
-                                        BackToStart ->
-                                            expectFirstBox
+                                ( Incorrect, BackToStart ) ->
+                                    expectFirstBox
 
-                                Pass ->
-                                    Expect.equal oldBox newBox
-
-                                MoveBoxes i ->
+                                ( MoveBoxes i, _ ) ->
                                     expectMoved i
 
-                                BackToFirstBox ->
-                                    expectFirstBox
+                                ( Pass, _ ) ->
+                                    expectMoved 0
                        )
         , fuzz2 fuzzResponse fuzzExtendedCard "Non-srs fields should never be changed by answering" <|
             \( time, answer, settings ) card ->
                 answerCard time answer settings card
                     |> .unrelatedField
-                    |> (\i ->
-                            Expect.equal card.unrelatedField i
-                       )
+                    |> Expect.equal card.unrelatedField
         ]
 
 
+{-| Tests for `answerCardInDeck`.
+-}
 suiteAnswerCardInDeck : Test
 suiteAnswerCardInDeck =
     describe "answerCardInDeck"
         [ fuzz3 (Fuzz.tuple ( fuzzTime, fuzzAnswer )) fuzzDeck int "Settings shouldn't be touched" <|
             \( time, answer ) deck i ->
-                let
-                    updatedDeck =
-                        answerCardInDeck time answer i deck
-
-                    updatedSettings =
-                        updatedDeck.settings
-                in
-                Expect.equal deck.settings updatedSettings
+                answerCardInDeck time answer i deck
+                    |> .settings
+                    |> Expect.equal deck.settings
         , fuzz3 (Fuzz.tuple ( fuzzTime, fuzzAnswer )) fuzzDeck int "Cards other than index should be unaffected" <|
             \( time, answer ) deck index ->
-                let
-                    updatedDeck =
-                        answerCardInDeck time answer index deck
-                in
-                ArrayX.zip deck.cards updatedDeck.cards
+                answerCardInDeck time answer index deck
+                    |> .cards
+                    |> ArrayX.zip deck.cards
                     |> ArrayX.indexedMapToList
                         (\i ( c1, c2 ) ->
-                            if i == index then
-                                True
-
-                            else
-                                c1 == c2
+                            i == index || c1 == c2
                         )
                     |> List.all identity
                     |> Expect.true "Only updated card should change in deck"
         , fuzz3 (Fuzz.tuple ( fuzzTime, fuzzAnswer )) fuzzDeck int "Answering card by index should be the same as answering independently" <|
             \( time, answer ) deck i ->
                 let
-                    originalCard =
-                        Array.get i deck.cards
-
+                    updatedCard : Maybe (Card {})
                     updatedCard =
-                        Maybe.map (answerCard time answer deck.settings) originalCard
+                        Array.get i deck.cards
+                            |> Maybe.map (answerCard time answer deck.settings)
 
-                    updatedDeck =
-                        answerCardInDeck time answer i deck
-
+                    updatedCardInDeck : Maybe (Card {})
                     updatedCardInDeck =
-                        Array.get i updatedDeck.cards
+                        answerCardInDeck time answer i deck
+                            |> .cards
+                            |> Array.get i
                 in
                 Expect.equal updatedCard updatedCardInDeck
         ]
 
 
+{-| Test `getDueCardIndices`.
+-}
 suiteGetDueCardIndices : Test
 suiteGetDueCardIndices =
     describe "getDue"
         [ fuzz2 fuzzDeck fuzzTime "Due cards should contain all New cards" <|
             \deck time ->
                 let
+                    dueDeck : List { srsData : SRSData }
                     dueDeck =
                         List.filterMap (\i -> Array.get i deck.cards) (getDueCardIndices time deck)
-
-                    notDue =
-                        Array.toList <| Array.filter (\c -> not <| List.member c dueDeck) deck.cards
-
-                    isNew c =
-                        case c.srsData of
-                            New ->
-                                True
-
-                            _ ->
-                                False
                 in
-                notDue
-                    |> ListX.count isNew
+                Array.filter (\c -> not <| List.member c dueDeck) deck.cards
+                    |> Array.toList
+                    |> ListX.count ((==) New << .srsData)
                     |> Expect.equal 0
         , fuzz2 fuzzDeck fuzzTime "Due cards should not contain Graduated cards" <|
             \deck time ->
-                let
-                    dueDeck =
-                        List.filterMap (\i -> Array.get i deck.cards) (getDueCardIndices time deck)
-
-                    isGraduated c =
-                        case c.srsData of
-                            Graduated ->
-                                True
-
-                            _ ->
-                                False
-                in
-                dueDeck
-                    |> ListX.count isGraduated
+                List.filterMap (\i -> Array.get i deck.cards) (getDueCardIndices time deck)
+                    |> ListX.count ((==) Graduated << .srsData)
                     |> Expect.equal 0
         , fuzz2 fuzzDeck fuzzTime "Due cards should contain all cards that are due" <|
             \deck time ->
                 let
+                    dueDeck : List { srsData : SRSData }
                     dueDeck =
                         List.filterMap (\i -> Array.get i deck.cards) (getDueCardIndices time deck)
 
-                    notDue =
-                        Array.toList <| Array.filter (\c -> not <| List.member c dueDeck) deck.cards
-
+                    overdueAmount : Natural -> Time.Posix -> Float
                     overdueAmount box reviewed =
-                        (toFloat (diff Hour Time.utc reviewed time) / 24 + 0.5) / toFloat (boxInterval box)
+                        (toFloat (diff Hour Time.utc reviewed time) / 24 + 0.5)
+                            / toFloat (deck.settings.boxSpacing <| Natural.toInt box)
 
-                    boxInterval i =
-                        if i > 0 then
-                            deck.settings.boxSpacing i
-
-                        else
-                            1
-
+                    isDue : { srsData : Box } -> Bool
                     isDue c =
                         case c.srsData of
-                            New ->
-                                True
+                            BoxN { box, lastReviewed } ->
+                                overdueAmount box lastReviewed >= 1
 
                             Graduated ->
                                 False
 
-                            BoxN box reviewed ->
-                                overdueAmount box reviewed >= 1
+                            New ->
+                                True
                 in
-                notDue
+                Array.filter (\c -> not <| List.member c dueDeck) deck.cards
+                    |> Array.toList
                     |> ListX.count isDue
                     |> Expect.equal 0
         , fuzz2 fuzzDeck fuzzTime "Due cards should not contain cards that are not due" <|
             \deck time ->
                 let
-                    dueDeck =
-                        List.filterMap (\i -> Array.get i deck.cards) (getDueCardIndices time deck)
-
+                    overdueAmount : Natural -> Time.Posix -> Float
                     overdueAmount box reviewed =
-                        (toFloat (diff Hour Time.utc reviewed time) / 24 + 0.5) / toFloat (boxInterval box)
+                        (toFloat (diff Hour Time.utc reviewed time) / 24 + 0.5)
+                            / toFloat (deck.settings.boxSpacing <| Natural.toInt box)
 
-                    boxInterval i =
-                        if i > 0 then
-                            deck.settings.boxSpacing i
-
-                        else
-                            1
-
+                    isDue : { srsData : Box } -> Bool
                     isDue c =
                         case c.srsData of
-                            New ->
-                                True
+                            BoxN { box, lastReviewed } ->
+                                overdueAmount box lastReviewed >= 1
 
                             Graduated ->
                                 False
 
-                            BoxN box reviewed ->
-                                overdueAmount box reviewed >= 1
-
-                    isNotDue c =
-                        not <| isDue c
+                            New ->
+                                True
                 in
-                dueDeck
-                    |> ListX.count isNotDue
+                List.filterMap (\i -> Array.get i deck.cards) (getDueCardIndices time deck)
+                    |> ListX.count (not << isDue)
                     |> Expect.equal 0
         , fuzz2 fuzzDeck fuzzTime "Due cards should be sorted." <|
             \deck time ->
                 let
+                    dueDeck : List { srsData : SRSData }
                     dueDeck =
                         List.filterMap (\i -> Array.get i deck.cards) (getDueCardIndices time deck)
 
+                    firstCard : { srsData : Box }
                     firstCard =
-                        case List.head dueDeck of
-                            Nothing ->
-                                { srsData = New }
+                        Maybe.withDefault { srsData = New } <| List.head dueDeck
 
-                            Just c ->
-                                c
+                    overdueAmount : { box : Natural, lastReviewed : Time.Posix } -> Float
+                    overdueAmount { box, lastReviewed } =
+                        (toFloat (diff Hour Time.utc lastReviewed time) / 24 + 0.5)
+                            / toFloat (deck.settings.boxSpacing <| Natural.toInt box)
 
-                    overdueAmount box reviewed =
-                        (toFloat (diff Hour Time.utc reviewed time) / 24 + 0.5) / toFloat (boxInterval box)
-
-                    boxInterval i =
-                        if i > 0 then
-                            deck.settings.boxSpacing i
-
-                        else
-                            1
-
-                    sortCheck nextCard ( lastCard, goodSort ) =
+                    step : { srsData : Box } -> ( { srsData : Box }, Bool ) -> ( { srsData : Box }, Bool )
+                    step nextCard ( lastCard, goodSort ) =
                         let
+                            good : ( { srsData : Box }, Bool )
                             good =
-                                if goodSort then
-                                    ( nextCard, True )
+                                ( nextCard, goodSort )
 
-                                else
-                                    ( nextCard, False )
-
+                            bad : ( { srsData : Box }, Bool )
                             bad =
                                 ( nextCard, False )
                         in
@@ -485,35 +477,35 @@ suiteGetDueCardIndices =
                             ( _, New ) ->
                                 good
 
-                            ( BoxN box1 reviewed1, BoxN box2 reviewed2 ) ->
-                                if overdueAmount box1 reviewed1 >= overdueAmount box2 reviewed2 then
+                            ( BoxN b1, BoxN b2 ) ->
+                                if overdueAmount b1 >= overdueAmount b2 then
                                     good
 
                                 else
                                     bad
                 in
                 dueDeck
-                    |> List.foldl sortCheck ( firstCard, True )
+                    |> List.foldl step ( firstCard, True )
                     |> Tuple.second
                     |> Expect.true "Expected a sorted deck"
         ]
 
 
+{-| Tests for `getDueCardIndicesWithDetails`.
+-}
 suiteGetDueCardIndicesWithDetails : Test
 suiteGetDueCardIndicesWithDetails =
     describe "getDueCardIndicesWithDetails"
         [ fuzz2 fuzzDeck fuzzTime "Queue status should be correct" <|
             \deck time ->
                 let
-                    dueDeck =
-                        List.filterMap (\{ index, queueDetails } -> Maybe.map (\c -> ( c, queueDetails )) <| Array.get index deck.cards) <| getDueCardIndicesWithDetails time deck
-
+                    checkQueue : { srsData : Box } -> QueueDetails
                     checkQueue c =
                         case c.srsData of
-                            BoxN boxNumber lastSeen ->
+                            BoxN { box, lastReviewed } ->
                                 InBox
-                                    { lastSeen = lastSeen
-                                    , boxNumber = boxNumber
+                                    { boxNumber = Natural.toInt box
+                                    , lastReviewed = lastReviewed
                                     }
 
                             Graduated ->
@@ -522,15 +514,17 @@ suiteGetDueCardIndicesWithDetails =
                             New ->
                                 NewCard
 
-                    queueCheck ( c, queue ) goodSort =
-                        if checkQueue c == queue then
-                            goodSort
-
-                        else
-                            False
+                    step : ( { srsData : Box }, QueueDetails ) -> Bool -> Bool
+                    step ( c, queue ) acc =
+                        acc && checkQueue c == queue
                 in
-                dueDeck
-                    |> List.foldl queueCheck True
+                getDueCardIndicesWithDetails time deck
+                    |> List.filterMap
+                        (\{ index, queueDetails } ->
+                            Array.get index deck.cards
+                                |> Maybe.map (\c -> ( c, queueDetails ))
+                        )
+                    |> List.foldl step True
                     |> Expect.true "Incorrect queue status!"
         , fuzz2 fuzzDeck fuzzTime "WithDetails should return the same indices in the same order as without" <|
             \deck time ->

@@ -2,25 +2,20 @@ module SpacedRepetition.Internal.SMTwo exposing
     ( EFactor
     , ReviewHistory(..)
     , Streak(..)
+    , decodeEFactor
+    , decodeStreak
     , defaultEFactor
     , eFactor
     , eFactorToFloat
+    , encodeEFactor
+    , encodeStreak
     , streakToInterval
     )
 
+import Json.Decode as Decode exposing (Decoder)
+import Json.Encode as Encode
+import SpacedRepetition.Internal.Natural as Natural exposing (Natural)
 import Time
-
-
-{-| Descriptive alias for the interval between reviews in days.
--}
-type alias Interval =
-    Int
-
-
-{-| Descriptive alias for the last time a card was reviewed.
--}
-type alias LastReviewed =
-    Time.Posix
 
 
 {-| The current streak of correct answers for a card. Cards with 2 or more
@@ -28,7 +23,7 @@ correct repetitions are not treated differently and are thus combined.
 -}
 type Streak
     = One
-    | TwoPlus Interval
+    | TwoPlus { interval : Natural }
     | Zero
 
 
@@ -41,23 +36,25 @@ type Streak
 -}
 type ReviewHistory
     = New
-    | Repeating EFactor Streak
-    | Reviewed EFactor LastReviewed Streak
+    | Repeating { ease : EFactor, streak : Streak }
+    | Reviewed { ease : EFactor, lastReviewed : Time.Posix, streak : Streak }
 
 
-{-| Given how many times a card has been correctly answered in a row, determine the interval between reviews. -
+{-| Given how many times a card has been correctly answered in a row, determine the interval between reviews.
 -}
-streakToInterval : Streak -> Int
+streakToInterval : Streak -> Natural
 streakToInterval streak =
-    case streak of
+    (case streak of
         One ->
-            6
+            Natural.fromInt 6
 
-        TwoPlus i ->
-            i
+        TwoPlus { interval } ->
+            Just interval
 
         Zero ->
-            1
+            Natural.fromInt 1
+    )
+        |> Maybe.withDefault Natural.nil
 
 
 {-| Opaque type for "ease". Must be greater than 1.3, default value of 2.5
@@ -86,3 +83,54 @@ eFactor f =
 eFactorToFloat : EFactor -> Float
 eFactorToFloat (EFactor f) =
     f
+
+
+{-| Encode an`EFactor` as JSON.
+-}
+encodeEFactor : EFactor -> Encode.Value
+encodeEFactor eF =
+    Encode.float <| eFactorToFloat eF
+
+
+{-| Decode an`EFactor` as from JSON.
+-}
+decodeEFactor : Decoder EFactor
+decodeEFactor =
+    Decode.map eFactor Decode.float
+
+
+{-| Encode a `Streak` as JSON.
+-}
+encodeStreak : Streak -> Encode.Value
+encodeStreak streak =
+    case streak of
+        One ->
+            Encode.string "O"
+
+        TwoPlus { interval } ->
+            Natural.encode interval
+
+        Zero ->
+            Encode.string "Z"
+
+
+{-| Decode a `Streak` from JSON.
+-}
+decodeStreak : Decoder Streak
+decodeStreak =
+    Decode.oneOf
+        [ Decode.string
+            |> Decode.andThen
+                (\string ->
+                    case string of
+                        "Z" ->
+                            Decode.succeed Zero
+
+                        "O" ->
+                            Decode.succeed One
+
+                        _ ->
+                            Decode.fail "Invalid Streak"
+                )
+        , Decode.map ((\interval -> TwoPlus { interval = interval }) << Natural.max Natural.six) Natural.decode
+        ]

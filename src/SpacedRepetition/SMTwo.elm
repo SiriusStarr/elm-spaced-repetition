@@ -110,16 +110,22 @@ import Array.Extra as ArrayX
 import Json.Decode as Decode
 import Json.Encode as Encode
 import List.Extra as ListX
+import SpacedRepetition.Internal.Natural as Natural exposing (Natural)
 import SpacedRepetition.Internal.SMTwo
     exposing
         ( EFactor
         , ReviewHistory(..)
         , Streak(..)
+        , decodeEFactor
+        , decodeStreak
         , defaultEFactor
         , eFactor
         , eFactorToFloat
+        , encodeEFactor
+        , encodeStreak
         , streakToInterval
         )
+import SpacedRepetition.Internal.Time as Time
 import Time
 import Time.Extra exposing (Interval(..), diff)
 
@@ -133,9 +139,7 @@ A `Card` contains only the information necessary for scheduling and nothing else
 
 -}
 type alias Card a =
-    { a
-        | srsData : SRSData
-    }
+    { a | srsData : SRSData }
 
 
 {-| A `Deck` represents a list of cards to be studied (this might be called a "collection" in other software). It is simply an `Array` of `Card` and requires no special creation or manipulation. Maintaining the state of a `Deck` may be handled by the user of the module or by this module itself. In general, it is probably best not to add a massive quantity of new (unstudied) cards to a deck at once.
@@ -165,17 +169,17 @@ encoderSRSData data =
         New ->
             Encode.null
 
-        Reviewed eF priorDate streak ->
+        Repeating { ease, streak } ->
             Encode.object
-                [ ( "eFactor", encoderEFactor eF )
-                , ( "priorDate", Encode.int <| Time.posixToMillis priorDate // 1000 ) -- Encode time in seconds; loss of precision is acceptable
-                , ( "streak", encoderStreak streak )
+                [ ( "eFactor", encodeEFactor ease )
+                , ( "streak", encodeStreak streak )
                 ]
 
-        Repeating eF streak ->
+        Reviewed { ease, lastReviewed, streak } ->
             Encode.object
-                [ ( "eFactor", encoderEFactor eF )
-                , ( "streak", encoderStreak streak )
+                [ ( "eFactor", encodeEFactor ease )
+                , ( "priorDate", Time.encode lastReviewed )
+                , ( "streak", encodeStreak streak )
                 ]
 
 
@@ -185,13 +189,20 @@ decoderSRSData : Decode.Decoder SRSData
 decoderSRSData =
     Decode.oneOf
         [ Decode.null New
-        , Decode.map3 Reviewed
-            (Decode.map eFactor <| Decode.field "eFactor" Decode.float)
-            (Decode.map (\t -> Time.millisToPosix <| t * 1000) <| Decode.field "priorDate" Decode.int)
-            (Decode.field "streak" decoderStreak)
-        , Decode.map2 Repeating
-            (Decode.map eFactor <| Decode.field "eFactor" Decode.float)
-            (Decode.field "streak" decoderStreak)
+        , Decode.map3
+            (\ease lastReviewed streak ->
+                Reviewed
+                    { ease = ease
+                    , lastReviewed = lastReviewed
+                    , streak = streak
+                    }
+            )
+            (Decode.field "eFactor" decodeEFactor)
+            (Decode.field "priorDate" Time.decode)
+            (Decode.field "streak" decodeStreak)
+        , Decode.map2 (\ease streak -> Repeating { ease = ease, streak = streak })
+            (Decode.field "eFactor" decodeEFactor)
+            (Decode.field "streak" decodeStreak)
         ]
 
 
@@ -211,27 +222,27 @@ decoderSRSData =
 
 -}
 type Answer
-    = Perfect
+    = CorrectWithDifficulty
     | CorrectWithHesitation
-    | CorrectWithDifficulty
-    | IncorrectButRemembered
     | IncorrectButFamiliar
+    | IncorrectButRemembered
     | NoRecollection
+    | Perfect
 
 
 {-| `answerCardInDeck` functions analogously to `answerCard` but handles maintenance of the `Deck`, which is typically what one would desire. When a card is presented to the user and answered, `answerCardInDeck` should be called with the current time (in the `Time.Posix` format returned by the `now` task of the core `Time` module), an `Answer`, the index of the card in the `Deck`, and the `Deck` itself. It returns the updated `Deck`. Use this function if you simply want to store a `Deck` and not worry about updating it manually (which is most likely what you want). Otherwise, use `answerCard` to handle updating the `Deck` manually. Handling the presentation of a card is the responsibility of the implementing program, as various behaviors might be desirable in different cases. Note that if an invalid (out of bounds) index is passed, the `Deck` is returned unaltered.
 -}
 answerCardInDeck : Time.Posix -> Answer -> Int -> Deck a -> Deck a
-answerCardInDeck time answer i deck =
-    ArrayX.update i (answerCard time answer) deck
+answerCardInDeck time answer i =
+    ArrayX.update i (answerCard time answer)
 
 
 {-| When a card is presented to the user and answered, `answerCard` should be called with the current time (in the `Time.Posix` format returned by the `now` task of the core `Time` module) and an `Answer`. It returns the updated card, which should replace the card in the `Deck`. Use this function if you want to handle updating the `Deck` manually; otherwise, use `answerCardInDeck`. Handling the presentation of a card is the responsibility of the implementing program, as various behaviors might be desirable in different cases.
 -}
 answerCard : Time.Posix -> Answer -> Card a -> Card a
-answerCard time answer card =
-    updateEFactor answer card
-        |> scheduleCard time answer
+answerCard time answer =
+    updateEFactor answer
+        >> scheduleCard time answer
 
 
 {-| `getDueCardIndices` takes the current time (in the `Time.Posix` format returned by the `now` task of the core `Time` module) and a `Deck` and returns the indices of the subset of the `Deck` that is due for review (as `List Int`). While the SM-2 algorithm does not specify this, the returned indices will be sorted in the following order:
@@ -251,7 +262,7 @@ getDueCardIndices time deck =
         |> List.filter
             (isDue time << Tuple.second)
         |> List.sortWith
-            (\c1 c2 -> sortDue time (Tuple.second c1) (Tuple.second c2))
+            (\( _, c1 ) ( _, c2 ) -> compareDue time c1 c2)
         |> ListX.reverseMap Tuple.first
 
 
@@ -275,7 +286,7 @@ getDueCardIndicesWithDetails time deck =
         |> List.filter
             (isDue time << Tuple.second)
         |> List.sortWith
-            (\c1 c2 -> sortDue time (Tuple.second c1) (Tuple.second c2))
+            (\( _, c1 ) ( _, c2 ) -> compareDue time c1 c2)
         |> ListX.reverseMap
             (\( index, card ) ->
                 { index = index, queueDetails = getQueueDetails card }
@@ -286,16 +297,16 @@ getDueCardIndicesWithDetails time deck =
 
   - `NewCard` -- A card that has never before been studied (encountered) by the user.
   - `ReviewQueue {...}` -- A card that is being reviewed for retention.
-      - `lastSeen : Time.Posix` -- The date and time the card was last reviewed.
       - `intervalInDays : Int` -- The interval, in days from the date last seen, that the card was slated for review in.
+      - `lastReviewed : Time.Posix` -- The date and time the card was last reviewed.
   - `RepeatingQueue {...}` -- A card to which an unsatisfactory answer was given, slated for review before the end of the session.
       - `intervalInDays : Int` -- The interval, in days from the date last seen, that the card was slated for review in. This will reset to the based interval (1 day) if the card was answered incorrectly.
 
 -}
 type QueueDetails
     = NewCard
-    | ReviewQueue { lastSeen : Time.Posix, intervalInDays : Int }
     | RepeatingQueue { intervalInDays : Int }
+    | ReviewQueue { intervalInDays : Int, lastReviewed : Time.Posix }
 
 
 {-| `getCardDetails` returns the current queue status for a given card. If you require this for every due card, simply use `getDueCardIndicesWithDetails`.
@@ -309,24 +320,28 @@ getCardDetails c =
 -- * Non-exposed only below here
 
 
+{-| Given a card, return its review status.
+-}
 getQueueDetails : Card a -> QueueDetails
 getQueueDetails c =
     case c.srsData of
         New ->
             NewCard
 
-        Reviewed _ priorDate streak ->
+        Repeating { streak } ->
+            RepeatingQueue { intervalInDays = Natural.toInt <| streakToInterval streak }
+
+        Reviewed { lastReviewed, streak } ->
             ReviewQueue
-                { lastSeen = priorDate
-                , intervalInDays = streakToInterval streak
+                { intervalInDays = Natural.toInt <| streakToInterval streak
+                , lastReviewed = lastReviewed
                 }
 
-        Repeating _ streak ->
-            RepeatingQueue { intervalInDays = streakToInterval streak }
 
-
-sortDue : Time.Posix -> Card a -> Card a -> Order
-sortDue time c1 c2 =
+{-| Compare the "due"-ness of two cards at a given time.
+-}
+compareDue : Time.Posix -> Card a -> Card a -> Order
+compareDue time c1 c2 =
     case ( c1.srsData, c2.srsData ) of
         -- New cards go last
         ( New, New ) ->
@@ -339,89 +354,90 @@ sortDue time c1 c2 =
             GT
 
         -- Repeating cards go before new but after reviewing
-        ( Repeating _ _, Repeating _ _ ) ->
+        ( Repeating _, Repeating _ ) ->
             EQ
 
-        ( Repeating _ _, _ ) ->
+        ( Repeating _, _ ) ->
             LT
 
-        ( _, Repeating _ _ ) ->
+        ( _, Repeating _ ) ->
             GT
 
         -- If neither is end of session, then rank "more due" cards first.  Note that this isn't in the SM-2 algorithm and is just a QoL feature.  EQ case doesn't matter, since order becomes irrelevant then.
-        ( Reviewed _ reviewed1 streak1, Reviewed _ reviewed2 streak2 ) ->
-            if overdueAmount time reviewed1 (streakToInterval streak1) >= overdueAmount time reviewed2 (streakToInterval streak2) then
+        ( Reviewed r1, Reviewed r2 ) ->
+            if
+                daysOverdue time r1.lastReviewed (streakToInterval r1.streak)
+                    >= daysOverdue time r2.lastReviewed (streakToInterval r2.streak)
+            then
                 GT
 
             else
                 LT
 
 
-overdueAmount : Time.Posix -> Time.Posix -> Int -> Float
-overdueAmount time reviewed interval =
+{-| Given the current time, the time a card was last reviewed, and scheduled
+interval, determine how many days overdue the card is.
+-}
+daysOverdue : Time.Posix -> Time.Posix -> Natural -> Float
+daysOverdue time reviewed interval =
     let
+        dayDiff : Float
         dayDiff =
             toFloat (diff Hour Time.utc reviewed time) / 24
     in
     -- The "next day" starts after 12 hours; this is ultimately a hack to prevent the user of the module from having to determine when the day rolls over.
-    dayDiff + 0.5 - toFloat interval
+    dayDiff + 0.5 - Natural.toFloat interval
 
 
+{-| Check if a card is currently due to be studied.
+-}
 isDue : Time.Posix -> Card a -> Bool
 isDue time { srsData } =
     case srsData of
         New ->
             True
 
-        Repeating _ _ ->
+        Repeating _ ->
             True
 
-        Reviewed _ reviewed streak ->
-            overdueAmount time reviewed (streakToInterval streak) >= 0
+        Reviewed { lastReviewed, streak } ->
+            daysOverdue time lastReviewed (streakToInterval streak) >= 0
 
 
-updateCardEFactor : EFactor -> Card a -> Card a
-updateCardEFactor eFactor card =
-    case card.srsData of
-        Reviewed _ date streak ->
-            { card | srsData = Reviewed eFactor date streak }
-
-        _ ->
-            -- Only update e-factor if reviewing
-            card
-
-
+{-| Given an answer quality, update the ease of a card (if applicable).
+-}
 updateEFactor : Answer -> Card a -> Card a
 updateEFactor answer card =
     let
         q : Float
         q =
             case answer of
-                Perfect ->
-                    5
+                CorrectWithDifficulty ->
+                    3
 
                 CorrectWithHesitation ->
                     4
 
-                CorrectWithDifficulty ->
-                    3
+                IncorrectButFamiliar ->
+                    1
 
                 IncorrectButRemembered ->
                     2
 
-                IncorrectButFamiliar ->
-                    1
-
                 NoRecollection ->
                     0
 
+                Perfect ->
+                    5
+
+        oldEFactor : Float
         oldEFactor =
             case card.srsData of
-                Reviewed eF _ _ ->
-                    eFactorToFloat eF
+                Repeating { ease } ->
+                    eFactorToFloat ease
 
-                Repeating eF _ ->
-                    eFactorToFloat eF
+                Reviewed { ease } ->
+                    eFactorToFloat ease
 
                 _ ->
                     0
@@ -430,108 +446,96 @@ updateEFactor answer card =
         updatedEFactor =
             oldEFactor + (0.1 - (5 - q) * (0.08 + (5 - q) * 0.02))
     in
-    updateCardEFactor (eFactor updatedEFactor) card
+    case card.srsData of
+        Reviewed { lastReviewed, streak } ->
+            { card
+                | srsData =
+                    Reviewed
+                        { ease = eFactor updatedEFactor
+                        , lastReviewed = lastReviewed
+                        , streak = streak
+                        }
+            }
+
+        _ ->
+            -- Only update e-factor if reviewing
+            card
 
 
+{-| Given an answer quality, schedule the card for future review, updating its queue status.
+-}
 scheduleCard : Time.Posix -> Answer -> Card a -> Card a
 scheduleCard time answer card =
     let
-        calcInterval : EFactor -> Streak -> Int
-        calcInterval eF streak =
-            ceiling <| toFloat (streakToInterval streak) * eFactorToFloat eF
+        continueStreak : EFactor -> Streak -> Streak
+        continueStreak eF streak =
+            (Natural.toFloat (streakToInterval streak)
+                * eFactorToFloat eF
+            )
+                |> ceiling
+                |> Natural.fromInt
+                |> Maybe.withDefault Natural.nil
+                |> (\interval -> TwoPlus { interval = interval })
 
         ( newEF, incrementStreak ) =
             case card.srsData of
                 New ->
                     ( defaultEFactor, One )
 
-                Reviewed eF _ streak ->
+                Repeating { ease, streak } ->
                     case streak of
-                        Zero ->
-                            ( eF, One )
-
                         One ->
-                            ( eF, TwoPlus <| calcInterval eF streak )
+                            ( ease, continueStreak ease streak )
 
                         TwoPlus _ ->
-                            ( eF, TwoPlus <| calcInterval eF streak )
+                            ( ease, continueStreak ease streak )
 
-                Repeating eF streak ->
-                    case streak of
                         Zero ->
-                            ( eF, One )
+                            ( ease, One )
 
+                Reviewed { ease, streak } ->
+                    case streak of
                         One ->
-                            ( eF, TwoPlus <| calcInterval eF streak )
+                            ( ease, continueStreak ease streak )
 
                         TwoPlus _ ->
-                            ( eF, TwoPlus <| calcInterval eF streak )
+                            ( ease, continueStreak ease streak )
 
+                        Zero ->
+                            ( ease, One )
+
+        newHistory : ReviewHistory
         newHistory =
+            let
+                breakStreak : ReviewHistory
+                breakStreak =
+                    Repeating { ease = newEF, streak = Zero }
+            in
             case answer of
-                Perfect ->
-                    Reviewed newEF time incrementStreak
-
-                CorrectWithHesitation ->
-                    Reviewed newEF time incrementStreak
-
                 CorrectWithDifficulty ->
-                    -- Never increment streak for CorrectWithDifficulty because it will get incremented when the card graduates from being repeated.
                     case card.srsData of
                         New ->
-                            Repeating newEF Zero
+                            breakStreak
 
-                        Reviewed _ _ streak ->
-                            Repeating newEF streak
+                        Repeating r ->
+                            Repeating { r | ease = newEF }
 
-                        Repeating _ streak ->
-                            Repeating newEF streak
+                        Reviewed { streak } ->
+                            Repeating { ease = newEF, streak = streak }
 
-                IncorrectButRemembered ->
-                    Repeating newEF Zero
+                CorrectWithHesitation ->
+                    Reviewed { ease = newEF, lastReviewed = time, streak = incrementStreak }
 
                 IncorrectButFamiliar ->
-                    Repeating newEF Zero
+                    breakStreak
+
+                IncorrectButRemembered ->
+                    breakStreak
 
                 NoRecollection ->
-                    Repeating newEF Zero
+                    breakStreak
+
+                Perfect ->
+                    Reviewed { ease = newEF, lastReviewed = time, streak = incrementStreak }
     in
     { card | srsData = newHistory }
-
-
-encoderEFactor : EFactor -> Encode.Value
-encoderEFactor eF =
-    Encode.float <| eFactorToFloat eF
-
-
-encoderStreak : Streak -> Encode.Value
-encoderStreak streak =
-    case streak of
-        Zero ->
-            Encode.string "Z"
-
-        One ->
-            Encode.string "O"
-
-        TwoPlus i ->
-            Encode.int i
-
-
-decoderStreak : Decode.Decoder Streak
-decoderStreak =
-    Decode.oneOf
-        [ Decode.string
-            |> Decode.andThen
-                (\string ->
-                    case string of
-                        "Z" ->
-                            Decode.succeed Zero
-
-                        "O" ->
-                            Decode.succeed One
-
-                        _ ->
-                            Decode.fail "Invalid Streak"
-                )
-        , Decode.map (TwoPlus << max 6) Decode.int
-        ]

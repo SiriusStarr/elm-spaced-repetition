@@ -191,9 +191,7 @@ A `Card` by default contains only the information necessary for scheduling and n
 
 -}
 type alias Card a =
-    { a
-        | srsData : SRSData
-    }
+    { a | srsData : SRSData }
 
 
 {-| A `Deck` represents a list of cards to be studied (this might be called a "collection" in other software). It is a record with field `cards` holding an `Array` of `Card` and field `settings` holding `LeitnerSettings`. Maintaining the state of a `Deck` may be handled by the user of the module or by this module itself. In general, it is probably best not to add a massive quantity of new (unstudied) cards to a deck at once.
@@ -360,7 +358,7 @@ getDueCardIndices time deck =
         |> List.filter
             (isDue deck.settings time << Tuple.second)
         |> List.sortWith
-            (\c1 c2 -> sortDue deck.settings time (Tuple.second c1) (Tuple.second c2))
+            (\( _, c1 ) ( _, c2 ) -> compareDue deck.settings time c1 c2)
         |> ListX.reverseMap Tuple.first
 
 
@@ -398,7 +396,7 @@ getDueCardIndicesWithDetails time deck =
         |> List.filter
             (isDue deck.settings time << Tuple.second)
         |> List.sortWith
-            (\c1 c2 -> sortDue deck.settings time (Tuple.second c1) (Tuple.second c2))
+            (\( _, c1 ) ( _, c2 ) -> compareDue deck.settings time c1 c2)
         |> ListX.reverseMap
             (\( index, card ) ->
                 { index = index, queueDetails = getQueueDetails card }
@@ -434,11 +432,10 @@ getQueueDetails c =
             NewCard
 
 
-{-| Sort two cards based on which is more due to be studied (more due coming
-first).
+{-| Compare the "due"-ness of two cards at a given time.
 -}
-sortDue : LeitnerSettings -> Time.Posix -> Card a -> Card a -> Order
-sortDue settings time c1 c2 =
+compareDue : LeitnerSettings -> Time.Posix -> Card a -> Card a -> Order
+compareDue settings time c1 c2 =
     case ( c1.srsData, c2.srsData ) of
         -- New cards go last
         ( Graduated, Graduated ) ->

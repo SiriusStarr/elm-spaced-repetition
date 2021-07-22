@@ -8,7 +8,7 @@ module TestSMTwo exposing
 
 import Array exposing (Array)
 import Array.Extra as ArrayX
-import Expect exposing (FloatingPointTolerance(..))
+import Expect exposing (Expectation, FloatingPointTolerance(..))
 import Fuzz
     exposing
         ( Fuzzer
@@ -20,6 +20,7 @@ import Json.Decode as Decode
 import Json.Encode as Encode
 import List.Extra as ListX
 import Random
+import SpacedRepetition.Internal.Natural as Natural exposing (Natural)
 import SpacedRepetition.Internal.SMTwo
     exposing
         ( EFactor
@@ -47,127 +48,231 @@ import Time
 import Time.Extra exposing (Interval(..), diff)
 
 
+{-| Fuzz an EFactor (ease)
+-}
 fuzzEFactor : Fuzzer EFactor
 fuzzEFactor =
     Fuzz.map eFactor (floatRange 0 1000)
 
 
+{-| Fuzz a streak
+-}
 fuzzStreak : Fuzzer Streak
 fuzzStreak =
     Fuzz.oneOf
         [ Fuzz.constant Zero
         , Fuzz.constant One
-        , Fuzz.map TwoPlus <| intRange 6 Random.maxInt
+        , intRange 6 Random.maxInt
+            |> Fuzz.map
+                (Natural.fromInt
+                    >> Maybe.withDefault Natural.nil
+                    >> (\interval -> TwoPlus { interval = interval })
+                )
         ]
 
 
+{-| Fuzz a review history.
+-}
 fuzzSRSData : Fuzzer SRSData
 fuzzSRSData =
     Fuzz.oneOf
         [ Fuzz.constant New
-        , Fuzz.map3 Reviewed fuzzEFactor fuzzTime fuzzStreak
-        , Fuzz.map2 Repeating fuzzEFactor fuzzStreak
+        , Fuzz.map3
+            (\ease lastReviewed streak ->
+                Reviewed
+                    { ease = ease
+                    , lastReviewed = lastReviewed
+                    , streak = streak
+                    }
+            )
+            fuzzEFactor
+            fuzzTime
+            fuzzStreak
+        , Fuzz.map2 (\ease streak -> Repeating { ease = ease, streak = streak })
+            fuzzEFactor
+            fuzzStreak
         ]
 
 
+{-| Fuzz a time.
+-}
 fuzzTime : Fuzzer Time.Posix
 fuzzTime =
     Fuzz.map (\i -> Time.millisToPosix (1000 * i)) (intRange 1 Random.maxInt)
 
 
+{-| Fuzz a card.
+-}
 fuzzCard : Fuzzer { srsData : SRSData }
 fuzzCard =
     Fuzz.map (\d -> { srsData = d }) fuzzSRSData
 
 
+{-| Fuzz a deck of cards.
+-}
 fuzzDeck : Fuzzer (Array { srsData : SRSData })
 fuzzDeck =
     Fuzz.array fuzzCard
 
 
+{-| Fuzz a card with extra fields.
+-}
 fuzzExtendedCard : Fuzzer { srsData : SRSData, unrelatedField : Int }
 fuzzExtendedCard =
     Fuzz.map2 (\d i -> { srsData = d, unrelatedField = i }) fuzzSRSData int
 
 
-intToAnswer : Int -> Answer
-intToAnswer i =
-    case i of
-        5 ->
-            Perfect
-
-        4 ->
-            CorrectWithHesitation
-
-        3 ->
-            CorrectWithDifficulty
-
-        2 ->
-            IncorrectButRemembered
-
-        1 ->
-            IncorrectButFamiliar
-
-        0 ->
-            NoRecollection
-
-        _ ->
-            NoRecollection
-
-
-answerToInt : Answer -> Int
-answerToInt ans =
-    case ans of
-        Perfect ->
-            5
-
-        CorrectWithHesitation ->
-            4
-
-        CorrectWithDifficulty ->
-            3
-
-        IncorrectButRemembered ->
-            2
-
-        IncorrectButFamiliar ->
-            1
-
-        NoRecollection ->
-            0
-
-
+{-| Fuzz an answer quality.
+-}
 fuzzAnswer : Fuzzer Answer
 fuzzAnswer =
-    Fuzz.map intToAnswer <| intRange 0 5
+    Fuzz.oneOf
+        [ Fuzz.constant Perfect
+        , Fuzz.constant
+            CorrectWithHesitation
+        , Fuzz.constant
+            CorrectWithDifficulty
+        , Fuzz.constant
+            IncorrectButRemembered
+        , Fuzz.constant
+            IncorrectButFamiliar
+        , Fuzz.constant
+            NoRecollection
+        ]
 
 
+{-| Get the ease of a card.
+-}
 eFactorFromCard : Card a -> Float
 eFactorFromCard c =
     case c.srsData of
         New ->
             2.5
 
-        Reviewed eF _ _ ->
-            eFactorToFloat eF
+        Repeating { ease } ->
+            eFactorToFloat ease
 
-        Repeating eF _ ->
-            eFactorToFloat eF
+        Reviewed { ease } ->
+            eFactorToFloat ease
 
 
+{-| Get the streak of a card.
+-}
 streakFromCard : Card a -> Maybe Streak
 streakFromCard c =
     case c.srsData of
         New ->
             Nothing
 
-        Reviewed _ _ streak ->
+        Repeating { streak } ->
             Just streak
 
-        Repeating _ streak ->
+        Reviewed { streak } ->
             Just streak
 
 
+{-| Predicate to check if a card is new.
+-}
+isNew : Card a -> Bool
+isNew { srsData } =
+    case srsData of
+        New ->
+            True
+
+        _ ->
+            False
+
+
+{-| Predicate to check if a card is being reviewed.
+-}
+isReviewed : Card a -> Bool
+isReviewed { srsData } =
+    case srsData of
+        Reviewed _ ->
+            True
+
+        _ ->
+            False
+
+
+{-| Predicate to check if a card is being repeated.
+-}
+isRepeating : Card a -> Bool
+isRepeating { srsData } =
+    case srsData of
+        Repeating _ ->
+            True
+
+        _ ->
+            False
+
+
+{-| Convert an Answer to a comparable.
+-}
+answerToInt : Answer -> Int
+answerToInt ans =
+    case ans of
+        CorrectWithDifficulty ->
+            3
+
+        CorrectWithHesitation ->
+            4
+
+        IncorrectButFamiliar ->
+            1
+
+        IncorrectButRemembered ->
+            2
+
+        NoRecollection ->
+            0
+
+        Perfect ->
+            5
+
+
+{-| Expect a new streak to be incremented (and have a longer interval).
+-}
+expectLonger : Streak -> Streak -> Expectation
+expectLonger oldStreak newStreak =
+    case ( oldStreak, newStreak ) of
+        ( _, Zero ) ->
+            Expect.fail "Answered card interval was not incremented."
+
+        ( Zero, One ) ->
+            Expect.pass
+
+        ( Zero, TwoPlus _ ) ->
+            Expect.fail "Answered card was over-incremented."
+
+        ( One, One ) ->
+            Expect.fail "Answered card interval was not incremented."
+
+        ( TwoPlus _, One ) ->
+            Expect.fail "Answered card was decremented instead of incremented."
+
+        ( One, TwoPlus _ ) ->
+            Expect.pass
+
+        ( TwoPlus old, TwoPlus new ) ->
+            Expect.greaterThan (Natural.toInt old.interval)
+                (Natural.toInt new.interval)
+
+
+{-| Given a lower bound and two numbers, ensure that the latter is less than the
+former or bounded at the lower bound.
+-}
+boundedLessThan : Float -> Float -> Float -> Expectation
+boundedLessThan bound old new =
+    if old == bound then
+        Expect.within (Absolute 0.000000001) bound new
+
+    else
+        Expect.lessThan old new
+
+
+{-| Test JSON encoding/decoding.
+-}
 suiteJson : Test
 suiteJson =
     describe "Json encoding/decoding"
@@ -187,6 +292,8 @@ suiteJson =
         ]
 
 
+{-| Test `answerCard`.
+-}
 suiteAnswerCard : Test
 suiteAnswerCard =
     describe "answerCard"
@@ -194,22 +301,14 @@ suiteAnswerCard =
             \time answer card ->
                 answerCard time answer card
                     |> .srsData
-                    |> (\rH ->
-                            case rH of
-                                New ->
-                                    Expect.fail "Card was still 'new' after answering"
-
-                                _ ->
-                                    Expect.pass
-                       )
+                    |> Expect.notEqual New
         , fuzz3 fuzzTime fuzzAnswer fuzzCard "Time reviewed should be updated" <|
             \time answer card ->
                 answerCard time answer card
-                    |> .srsData
-                    |> (\rH ->
-                            case rH of
-                                Reviewed _ rTime _ ->
-                                    Expect.equal time rTime
+                    |> (\c ->
+                            case c.srsData of
+                                Reviewed { lastReviewed } ->
+                                    Expect.equal time lastReviewed
 
                                 _ ->
                                     Expect.pass
@@ -225,249 +324,116 @@ suiteAnswerCard =
                     |> eFactorFromCard
                     |> (\newEF ->
                             let
+                                oldEF : Float
                                 oldEF =
                                     eFactorFromCard card
-
-                                boundedLessThan =
-                                    if oldEF == 1.3 then
-                                        Expect.within (Absolute 0.000000001) 1.3 newEF
-
-                                    else
-                                        Expect.lessThan oldEF newEF
                             in
-                            case card.srsData of
-                                Reviewed _ _ _ ->
-                                    case answer of
-                                        Perfect ->
-                                            Expect.greaterThan oldEF newEF
+                            case ( isReviewed card, answer ) of
+                                ( True, Perfect ) ->
+                                    Expect.greaterThan oldEF newEF
 
-                                        CorrectWithHesitation ->
-                                            Expect.within (Absolute 0.000000001) oldEF newEF
+                                ( True, CorrectWithHesitation ) ->
+                                    Expect.within (Absolute 0.000000001) oldEF newEF
 
-                                        CorrectWithDifficulty ->
-                                            boundedLessThan
+                                ( True, _ ) ->
+                                    boundedLessThan 1.3 oldEF newEF
 
-                                        IncorrectButRemembered ->
-                                            boundedLessThan
-
-                                        IncorrectButFamiliar ->
-                                            boundedLessThan
-
-                                        NoRecollection ->
-                                            boundedLessThan
-
-                                _ ->
+                                ( False, _ ) ->
                                     -- Unchanged EFactor if in repetition phase or new card
                                     Expect.within (Absolute 0.000000001) oldEF newEF
                        )
-        , fuzz3 fuzzTime fuzzAnswer fuzzCard "Streak should be updated" <|
+        , fuzz3 fuzzTime fuzzAnswer fuzzCard "Streak should be updated and card scheduled" <|
             \time answer card ->
                 answerCard time answer card
                     |> streakFromCard
                     |> (\newStreak ->
                             let
+                                oldStreak : Streak
                                 oldStreak =
                                     streakFromCard card
-
-                                incremented =
-                                    case ( oldStreak, newStreak ) of
-                                        ( _, Nothing ) ->
-                                            False
-
-                                        ( Nothing, Just newS ) ->
-                                            case newS of
-                                                Zero ->
-                                                    False
-
-                                                _ ->
-                                                    True
-
-                                        ( Just oldS, Just newS ) ->
-                                            case ( oldS, newS ) of
-                                                ( _, Zero ) ->
-                                                    False
-
-                                                ( Zero, One ) ->
-                                                    True
-
-                                                ( Zero, TwoPlus _ ) ->
-                                                    False
-
-                                                ( One, One ) ->
-                                                    False
-
-                                                ( One, TwoPlus _ ) ->
-                                                    True
-
-                                                ( TwoPlus _, One ) ->
-                                                    False
-
-                                                ( TwoPlus oldI, TwoPlus newI ) ->
-                                                    oldI < newI
+                                        |> Maybe.withDefault Zero
                             in
                             case answer of
-                                Perfect ->
-                                    Expect.true "Expected streak to be incremented" incremented
+                                CorrectWithDifficulty ->
+                                    Expect.equal (Just oldStreak) newStreak
 
                                 CorrectWithHesitation ->
-                                    Expect.true "Expected streak to be incremented" incremented
-
-                                CorrectWithDifficulty ->
-                                    -- Never increment streak for CorrectWithDifficulty because it will get incremented when the card graduates from being repeated.
-                                    case oldStreak of
-                                        Nothing ->
-                                            Expect.equal (Just Zero) newStreak
-
-                                        _ ->
-                                            Expect.equal oldStreak newStreak
-
-                                IncorrectButRemembered ->
-                                    Expect.equal (Just Zero) newStreak
+                                    Maybe.withDefault Zero newStreak
+                                        |> expectLonger oldStreak
 
                                 IncorrectButFamiliar ->
                                     Expect.equal (Just Zero) newStreak
 
+                                IncorrectButRemembered ->
+                                    Expect.equal (Just Zero) newStreak
+
                                 NoRecollection ->
                                     Expect.equal (Just Zero) newStreak
+
+                                Perfect ->
+                                    Maybe.withDefault Zero newStreak
+                                        |> expectLonger oldStreak
                        )
         , fuzz3 fuzzTime fuzzAnswer fuzzCard "Card should be repeated if necessary" <|
             \time answer card ->
                 answerCard time answer card
-                    |> .srsData
-                    |> (\rH ->
-                            let
-                                expectRepeat =
-                                    case rH of
-                                        New ->
-                                            Expect.fail "Repeat expected, got New instead"
+                    |> (\c ->
+                            Expect.true "Card should be repeated if necessary" <|
+                                case answer of
+                                    CorrectWithHesitation ->
+                                        isReviewed c
 
-                                        Repeating _ _ ->
-                                            Expect.pass
+                                    Perfect ->
+                                        isReviewed c
 
-                                        Reviewed _ _ _ ->
-                                            Expect.fail "Repeat expected, got Reviewed instead"
-
-                                expectReviewed =
-                                    case rH of
-                                        New ->
-                                            Expect.fail "Reviewed expected, got New instead"
-
-                                        Repeating _ _ ->
-                                            Expect.fail "Reviewed expected, got Repeating instead"
-
-                                        Reviewed _ _ _ ->
-                                            Expect.pass
-                            in
-                            case answer of
-                                Perfect ->
-                                    expectReviewed
-
-                                CorrectWithHesitation ->
-                                    expectReviewed
-
-                                _ ->
-                                    expectRepeat
-                       )
-        , fuzz3 fuzzTime fuzzAnswer fuzzCard "Card should be scheduled if appropriate" <|
-            \time answer card ->
-                answerCard time answer card
-                    |> streakFromCard
-                    |> (\newStreak ->
-                            let
-                                oldStreak =
-                                    streakFromCard card
-
-                                expectLonger =
-                                    case ( oldStreak, newStreak ) of
-                                        ( _, Nothing ) ->
-                                            Expect.fail "Answered card should never be New"
-
-                                        ( _, Just Zero ) ->
-                                            Expect.fail "Answered card interval was not incremented."
-
-                                        ( Just Zero, Just One ) ->
-                                            Expect.pass
-
-                                        ( Nothing, Just One ) ->
-                                            Expect.pass
-
-                                        ( Just One, Just One ) ->
-                                            Expect.fail "Answered card interval was not incremented."
-
-                                        ( Just (TwoPlus _), Just One ) ->
-                                            Expect.fail "Answered card was decremented instead of incremented."
-
-                                        ( Just One, Just (TwoPlus _) ) ->
-                                            Expect.pass
-
-                                        ( Nothing, Just (TwoPlus _) ) ->
-                                            Expect.fail "Answered card was over-incremented."
-
-                                        ( Just Zero, Just (TwoPlus _) ) ->
-                                            Expect.fail "Answered card was over-incremented."
-
-                                        ( Just (TwoPlus oldI), Just (TwoPlus newI) ) ->
-                                            Expect.greaterThan oldI newI
-                            in
-                            case answer of
-                                Perfect ->
-                                    expectLonger
-
-                                CorrectWithHesitation ->
-                                    expectLonger
-
-                                _ ->
-                                    Expect.pass
+                                    _ ->
+                                        isRepeating c
                        )
         , fuzz3 fuzzTime (Fuzz.tuple ( fuzzAnswer, fuzzAnswer )) fuzzCard "Better answers should always result in longer (or equal) intervals and vice versa." <|
             \time ( answer1, answer2 ) card ->
                 let
+                    firstInterval : Int
                     firstInterval =
                         answerCard time answer1 card
                             |> streakFromCard
                             |> Maybe.map streakToInterval
-                            |> Maybe.withDefault -1
+                            |> Maybe.withDefault Natural.nil
+                            |> Natural.toInt
 
+                    secondInterval : Int
                     secondInterval =
                         answerCard time answer2 card
                             |> streakFromCard
                             |> Maybe.map streakToInterval
-                            |> Maybe.withDefault -1
-
-                    ansInt1 =
-                        answerToInt answer1
-
-                    ansInt2 =
-                        answerToInt answer2
+                            |> Maybe.withDefault Natural.nil
+                            |> Natural.toInt
                 in
-                if ansInt1 > ansInt2 then
-                    Expect.atLeast secondInterval firstInterval
+                case compare (answerToInt answer1) (answerToInt answer2) of
+                    EQ ->
+                        Expect.equal firstInterval secondInterval
 
-                else if ansInt2 > ansInt1 then
-                    Expect.atLeast firstInterval secondInterval
+                    GT ->
+                        Expect.atLeast secondInterval firstInterval
 
-                else
-                    Expect.equal firstInterval secondInterval
+                    LT ->
+                        Expect.atLeast firstInterval secondInterval
         , fuzz3 fuzzTime fuzzAnswer fuzzExtendedCard "Non-srs fields should never be changed by answering" <|
             \time answer card ->
                 answerCard time answer card
                     |> .unrelatedField
-                    |> (\i ->
-                            Expect.equal card.unrelatedField i
-                       )
+                    |> Expect.equal card.unrelatedField
         ]
 
 
+{-| Test `answerCardInDeck`.
+-}
 suiteAnswerCardInDeck : Test
 suiteAnswerCardInDeck =
     describe "answerCardInDeck"
         [ fuzz3 (Fuzz.tuple ( fuzzTime, fuzzAnswer )) fuzzDeck int "Cards other than index should be unaffected" <|
             \( time, answer ) deck index ->
-                let
-                    updatedDeck =
-                        answerCardInDeck time answer index deck
-                in
-                ArrayX.zip deck updatedDeck
+                answerCardInDeck time answer index deck
+                    |> ArrayX.zip deck
                     |> ArrayX.indexedMapToList
                         (\i ( c1, c2 ) ->
                             if i == index then
@@ -481,133 +447,118 @@ suiteAnswerCardInDeck =
         , fuzz3 (Fuzz.tuple ( fuzzTime, fuzzAnswer )) fuzzDeck int "Answering card by index should be the same as answering independently" <|
             \( time, answer ) deck i ->
                 let
-                    originalCard =
-                        Array.get i deck
-
+                    updatedCard : Maybe { srsData : SRSData }
                     updatedCard =
-                        Maybe.map (answerCard time answer) originalCard
+                        Array.get i deck
+                            |> Maybe.map (answerCard time answer)
 
-                    updatedDeck =
-                        answerCardInDeck time answer i deck
-
+                    updatedCardInDeck : Maybe { srsData : SRSData }
                     updatedCardInDeck =
-                        Array.get i updatedDeck
+                        answerCardInDeck time answer i deck
+                            |> Array.get i
                 in
                 Expect.equal updatedCard updatedCardInDeck
         ]
 
 
+{-| Test `getDueCardIndices`.
+-}
 suiteGetDueCardIndices : Test
 suiteGetDueCardIndices =
     describe "getDueCardIndices"
         [ fuzz2 fuzzDeck fuzzTime "Due cards should contain all New cards" <|
             \deck time ->
                 let
+                    dueDeck : List { srsData : SRSData }
                     dueDeck =
                         List.filterMap (\i -> Array.get i deck) (getDueCardIndices time deck)
-
-                    notDue =
-                        Array.toList <| Array.filter (\c -> not <| List.member c dueDeck) deck
-
-                    isNew c =
-                        case c.srsData of
-                            New ->
-                                True
-
-                            _ ->
-                                False
                 in
-                notDue
+                Array.filter (\c -> not <| List.member c dueDeck) deck
+                    |> Array.toList
                     |> ListX.count isNew
                     |> Expect.equal 0
         , fuzz2 fuzzDeck fuzzTime "Due cards should contain all Repeating cards" <|
             \deck time ->
                 let
+                    dueDeck : List { srsData : SRSData }
                     dueDeck =
                         List.filterMap (\i -> Array.get i deck) (getDueCardIndices time deck)
-
-                    notDue =
-                        Array.toList <| Array.filter (\c -> not <| List.member c dueDeck) deck
-
-                    isRepeating c =
-                        case c.srsData of
-                            Repeating _ _ ->
-                                True
-
-                            _ ->
-                                False
                 in
-                notDue
+                Array.filter (\c -> not <| List.member c dueDeck) deck
+                    |> Array.toList
                     |> ListX.count isRepeating
                     |> Expect.equal 0
         , fuzz2 fuzzDeck fuzzTime "Due cards should contain all Reviewed cards that are due" <|
             \deck time ->
                 let
+                    dueDeck : List { srsData : SRSData }
                     dueDeck =
                         List.filterMap (\i -> Array.get i deck) (getDueCardIndices time deck)
 
-                    notDue =
-                        Array.toList <| Array.filter (\c -> not <| List.member c dueDeck) deck
-
+                    overdueAmount : Natural -> Time.Posix -> Float
                     overdueAmount interval reviewed =
-                        toFloat (diff Hour Time.utc reviewed time) / 24 + 0.5 - toFloat interval
+                        toFloat (diff Hour Time.utc reviewed time) / 24 + 0.5 - Natural.toFloat interval
 
+                    isDue : { srsData : SRSData } -> Bool
                     isDue c =
                         case c.srsData of
-                            Reviewed _ reviewed streak ->
-                                overdueAmount (streakToInterval streak) reviewed >= 0
+                            Reviewed { lastReviewed, streak } ->
+                                overdueAmount (streakToInterval streak) lastReviewed >= 0
 
                             _ ->
                                 True
                 in
-                notDue
+                Array.filter (\c -> not <| List.member c dueDeck) deck
+                    |> Array.toList
                     |> ListX.count isDue
                     |> Expect.equal 0
         , fuzz2 fuzzDeck fuzzTime "Due cards should not contain Reviewed cards that are not due" <|
             \deck time ->
                 let
-                    dueDeck =
-                        List.filterMap (\i -> Array.get i deck) (getDueCardIndices time deck)
-
+                    overdueAmount : Natural -> Time.Posix -> Float
                     overdueAmount interval reviewed =
-                        toFloat (diff Hour Time.utc reviewed time) / 24 + 0.5 - toFloat interval
+                        toFloat (diff Hour Time.utc reviewed time) / 24 + 0.5 - Natural.toFloat interval
 
+                    isNotDue : { srsData : SRSData } -> Bool
                     isNotDue c =
                         case c.srsData of
-                            Reviewed _ reviewed streak ->
-                                overdueAmount (streakToInterval streak) reviewed < 0
+                            Reviewed { lastReviewed, streak } ->
+                                overdueAmount (streakToInterval streak) lastReviewed < 0
 
                             _ ->
                                 False
                 in
-                ListX.count isNotDue dueDeck
+                List.filterMap (\i -> Array.get i deck) (getDueCardIndices time deck)
+                    |> ListX.count isNotDue
                     |> Expect.equal 0
         , fuzz2 fuzzDeck fuzzTime "Due cards should be sorted." <|
             \deck time ->
                 let
+                    dueDeck : List { srsData : SRSData }
                     dueDeck =
                         List.filterMap (\i -> Array.get i deck) (getDueCardIndices time deck)
 
+                    firstCard : { srsData : SRSData }
                     firstCard =
                         case List.head dueDeck of
-                            Nothing ->
-                                { srsData = New }
-
                             Just c ->
                                 c
 
+                            Nothing ->
+                                { srsData = New }
+
+                    overdueAmount : Natural -> Time.Posix -> Float
                     overdueAmount interval reviewed =
-                        toFloat (diff Hour Time.utc reviewed time) / 24 + 0.5 - toFloat interval
+                        toFloat (diff Hour Time.utc reviewed time) / 24 + 0.5 - Natural.toFloat interval
 
-                    sortCheck nextCard ( lastCard, goodSort ) =
+                    step : { srsData : SRSData } -> ( { srsData : SRSData }, Bool ) -> ( { srsData : SRSData }, Bool )
+                    step nextCard ( lastCard, acc ) =
                         let
+                            good : ( { srsData : SRSData }, Bool )
                             good =
-                                if goodSort then
-                                    ( nextCard, True )
+                                ( nextCard, acc )
 
-                                else
-                                    ( nextCard, False )
-
+                            bad : ( { srsData : SRSData }, Bool )
                             bad =
                                 ( nextCard, False )
                         in
@@ -621,61 +572,63 @@ suiteGetDueCardIndices =
                             ( _, New ) ->
                                 good
 
-                            ( Repeating _ _, Repeating _ _ ) ->
+                            ( Repeating _, Repeating _ ) ->
                                 good
 
-                            ( Repeating _ _, _ ) ->
+                            ( Repeating _, _ ) ->
                                 bad
 
-                            ( _, Repeating _ _ ) ->
+                            ( _, Repeating _ ) ->
                                 good
 
-                            ( Reviewed _ reviewed1 streak1, Reviewed _ reviewed2 streak2 ) ->
-                                if overdueAmount (streakToInterval streak1) reviewed1 >= overdueAmount (streakToInterval streak2) reviewed2 then
+                            ( Reviewed r1, Reviewed r2 ) ->
+                                if overdueAmount (streakToInterval r1.streak) r1.lastReviewed >= overdueAmount (streakToInterval r2.streak) r2.lastReviewed then
                                     good
 
                                 else
                                     bad
                 in
                 dueDeck
-                    |> List.foldl sortCheck ( firstCard, True )
+                    |> List.foldl step ( firstCard, True )
                     |> Tuple.second
                     |> Expect.true "Expected a sorted deck"
         ]
 
 
+{-| Test `getDueCardIndicesWithDetails`.
+-}
 suiteGetDueCardIndicesWithDetails : Test
 suiteGetDueCardIndicesWithDetails =
     describe "getDueCardIndicesWithDetails"
         [ fuzz2 fuzzDeck fuzzTime "Queue status should be correct" <|
             \deck time ->
                 let
-                    dueDeck =
-                        List.filterMap (\{ index, queueDetails } -> Maybe.map (\c -> ( c, queueDetails )) <| Array.get index deck) <| getDueCardIndicesWithDetails time deck
-
+                    checkQueue : { srsData : SRSData } -> QueueDetails
                     checkQueue c =
                         case c.srsData of
-                            Reviewed _ lastSeen streak ->
-                                ReviewQueue
-                                    { lastSeen = lastSeen
-                                    , intervalInDays = streakToInterval streak
-                                    }
-
-                            Repeating _ streak ->
-                                RepeatingQueue { intervalInDays = streakToInterval streak }
-
                             New ->
                                 NewCard
 
-                    queueCheck ( c, queue ) goodSort =
-                        if checkQueue c == queue then
-                            goodSort
+                            Repeating { streak } ->
+                                RepeatingQueue { intervalInDays = Natural.toInt <| streakToInterval streak }
 
-                        else
-                            False
+                            Reviewed { lastReviewed, streak } ->
+                                ReviewQueue
+                                    { intervalInDays = Natural.toInt <| streakToInterval streak
+                                    , lastReviewed = lastReviewed
+                                    }
+
+                    step : ( { srsData : SRSData }, QueueDetails ) -> Bool -> Bool
+                    step ( c, queue ) acc =
+                        checkQueue c == queue && acc
                 in
-                dueDeck
-                    |> List.foldl queueCheck True
+                getDueCardIndicesWithDetails time deck
+                    |> List.filterMap
+                        (\{ index, queueDetails } ->
+                            Array.get index deck
+                                |> Maybe.map (\c -> ( c, queueDetails ))
+                        )
+                    |> List.foldl step True
                     |> Expect.true "Incorrect queue status!"
         , fuzz2 fuzzDeck fuzzTime "WithDetails should return the same indices in the same order as without" <|
             \deck time ->

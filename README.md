@@ -180,6 +180,9 @@ individual implementations.  Refer to their documentation for specifics.
       problems by returning zero prior to this version (shh...).
     * Tail-call optimized `fibonacciSpacing`, so you can have intervals of 10^38
       years for your 200th box if you're an eternal but not omniscient being.
+  * `SpacedRepetition.SMTwo`
+    * **Breaking:** `lastSeen` is now `lastReviewed` in `QueueDetails`, to be
+      more explicit/consistent with naming.
 * `2.0.1` -- 🐛 Fixed a bug in `SpacedRepetition.SMTwoAnki` that caused the
   extra interval from studying an overdue card to not count with `Good` answers.
   Per the algorithm, half of the overdue amount should be included in

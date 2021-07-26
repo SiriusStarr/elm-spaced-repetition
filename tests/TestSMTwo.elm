@@ -264,7 +264,7 @@ former or bounded at the lower bound.
 -}
 boundedLessThan : Float -> Float -> Float -> Expectation
 boundedLessThan bound old new =
-    if old == bound then
+    if old <= bound then
         Expect.within (Absolute 0.000000001) bound new
 
     else

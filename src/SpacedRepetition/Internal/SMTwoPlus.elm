@@ -5,12 +5,19 @@ module SpacedRepetition.Internal.SMTwoPlus exposing
     , ReviewHistory(..)
     , createDifficulty
     , createInterval
+    , decodeDifficulty
+    , decodeInterval
+    , defaultDifficulty
     , difficultyToFloat
+    , encodeDifficulty
+    , encodeInterval
     , intervalToFloat
     , performanceRating
     , performanceRatingToFloat
     )
 
+import Json.Decode as Decode exposing (Decoder)
+import Json.Encode as Encode
 import Round exposing (roundNum)
 import Time
 
@@ -19,12 +26,6 @@ import Time
 -}
 type Difficulty
     = Difficulty Float
-
-
-{-| Descriptive alias for the date the card was last reviewed.
--}
-type alias LastReviewed =
-    Time.Posix
 
 
 {-| The interval between scheduled reviews, in days.
@@ -41,7 +42,11 @@ type Interval
 -}
 type ReviewHistory
     = New
-    | Reviewed Difficulty LastReviewed Interval
+    | Reviewed
+        { difficulty : Difficulty
+        , interval : Interval
+        , lastReviewed : Time.Posix
+        }
 
 
 {-| Opaque type for the "performance rating" (answer quality) for a card.
@@ -78,6 +83,27 @@ createDifficulty f =
     Difficulty <| clamp 0.0 1.0 f
 
 
+{-| The starting difficulty for new cards.
+-}
+defaultDifficulty : Difficulty
+defaultDifficulty =
+    Difficulty 0.3
+
+
+{-| Encode a difficulty as JSON.
+-}
+encodeDifficulty : Difficulty -> Encode.Value
+encodeDifficulty =
+    Encode.float << difficultyToFloat
+
+
+{-| Decode a difficulty from JSON.
+-}
+decodeDifficulty : Decoder Difficulty
+decodeDifficulty =
+    Decode.map createDifficulty Decode.float
+
+
 {-| Turn a `Float` into an `Interval`, rounding it to 4 decimal places and
 ensuring it is at least 1.
 -}
@@ -93,3 +119,17 @@ createInterval f =
 intervalToFloat : Interval -> Float
 intervalToFloat (Interval f) =
     f
+
+
+{-| Encode an interval as JSON.
+-}
+encodeInterval : Interval -> Encode.Value
+encodeInterval =
+    Encode.float << intervalToFloat
+
+
+{-| Decode an interval from JSON.
+-}
+decodeInterval : Decoder Interval
+decodeInterval =
+    Decode.map createInterval Decode.float

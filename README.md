@@ -155,6 +155,14 @@ by the `now` task of the core `Time` module) and a `Deck` and returns the
 indices of the subset of the `Deck` that is due for review.  The sorting of the
 results varies with the algorithm.
 
+### `QueueDetails`, `getCardDetails`, `getDueCardIndicesWithDetails`
+
+If you need information about the SRS status of a card (e.g. when it was last
+reviewed, whether it's new, etc.), such information may be found in the
+`QueueDetails` of a module.  `QueueDetails` may be obtained from a single `Card`
+with `getCardDetails` or along with the indices of due cards with
+`getDueCardIndicesWithDetails`.
+
 ### Miscellaneous
 
 The various algorithms provide additional functions/types as necessary for their
@@ -171,18 +179,51 @@ individual implementations.  Refer to their documentation for specifics.
     * **Breaking:** `lastSeen` is now `lastReviewed` in `QueueDetails`, to be
       more explicit/consistent with naming.
     * `NumberOfBoxes` is now exposed (but still opaque), so you may write type
-      type signatures with it.
+      signatures with it.
     * Note that cards will be graduated after answering (even with `Pass`) if
       they're in an invalid box beyond `NumberOfBoxes`.  This was always the
       case, but it's mentioned in the documentation now.
-    * Enforce `SpacingFunctions` returning an interval of at least 1 day; this
-      was always the case per documentation and you definitely couldn't cause
-      problems by returning zero prior to this version (shh...).
+    * **Bugfix:**  Enforce `SpacingFunctions` returning an interval of at least
+      1 day; this was always the case per documentation and you definitely
+      couldn't cause problems by returning zero prior to this version (shh...).
     * Tail-call optimized `fibonacciSpacing`, so you can have intervals of 10^38
       years for your 200th box if you're an eternal but not omniscient being.
   * `SpacedRepetition.SMTwo`
     * **Breaking:** `lastSeen` is now `lastReviewed` in `QueueDetails`, to be
       more explicit/consistent with naming.
+  * `SpacedRepetition.SMTwoAnki`
+    * **Breaking:** `lastSeen` is now `lastReviewed` in `QueueDetails`, to be
+      more explicit/consistent with naming.
+    * **(Technically) Breaking:** `AnkiSettings.startingEase` is now an `Ease`,
+      not a `Float`.  This should not actually require any effort on your part,
+      as it is still created using `setStartingEase` in the exact same way.
+    * **(Technically) Breaking:** `AnkiSettings.leechThreshold` is now a
+      `Natural`, not an `Int`.  This should not actually require any effort on
+      your part, as it is still created using `setLeechThreshold` in the exact
+      same way.
+    * **Bugfix:** Ensure that cards always graduate from being "lapsed"
+      *regardless of the answer if there are no lapse steps*.  This was
+      the behavior specified in the documentation of `lapseSteps`, but it wasn't
+      actually happening.  Now, answering `Hard` or `Again` on a "lapsed" card
+      will return it to the review queue if there are no lapse steps.
+      * Old behavior: With no lapse steps, failing a review card will lapse it,
+        making it immediately due for review.  Answering `Hard` or `Again` will
+        leave it immediately due.  Answering `Good` or `Easy` will return it to
+        the review queue.
+      * New behavior: With no lapse steps, failing a review card will lapse it,
+        making it immediately due for review.  Answering the card with *any*
+        answer will return it to the review queue.
+    * **Bugfix:** Ensure that cards always graduate from learning
+      *regardless of the answer if there are no learning steps*.  This was the
+      behavior specified in the documentation of `newSteps`, but it wasn't
+      actually happening.  Now, answering `Hard` or `Again` on a learning card
+      will graduate it to the review queue if there are no learning steps.
+      Unlike the case with lapses, however, this bug should have been quite rare
+      in practice, as the only way to end up with cards in the learning queue
+      with no learning steps would be to change the settings of a deck that had
+      already been partially studied to remove previously-extant `newSteps`.
+    * `Ease`, `TimeInterval`, `Days`, `Minutes`, and `Natural` are now exposed
+      (but still opaque), so you may write type signatures with them.
   * `SpacedRepetition.SMTwoPlus`
     * **Breaking:** `lastSeen` is now `lastReviewed` in `QueueDetails`, to be
       more explicit/consistent with naming.

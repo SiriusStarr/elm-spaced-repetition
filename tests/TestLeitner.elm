@@ -8,6 +8,7 @@ module TestLeitner exposing
 
 import Array exposing (Array)
 import Array.Extra as ArrayX
+import Basics.Extra exposing (flip)
 import Expect exposing (Expectation)
 import Fuzz
     exposing
@@ -44,6 +45,7 @@ import SpacedRepetition.Leitner
 import Test exposing (Test, describe, fuzz, fuzz2, fuzz3)
 import Time
 import Time.Extra exposing (Interval(..), diff)
+import Util exposing (fuzzNatural, fuzzTime)
 
 
 {-| Fuzz `OnIncorrect` behavior.
@@ -114,22 +116,6 @@ fuzzSRSData =
             fuzzTime
         , Fuzz.constant Graduated
         ]
-
-
-{-| Fuzz a natural number.
--}
-fuzzNatural : Fuzzer Natural
-fuzzNatural =
-    intRange 0 1000
-        |> Fuzz.map Natural.fromInt
-        |> Fuzz.map (Maybe.withDefault Natural.nil)
-
-
-{-| Fuzz a time.
--}
-fuzzTime : Fuzzer Time.Posix
-fuzzTime =
-    Fuzz.map (\i -> Time.millisToPosix (1000 * i)) (intRange 1 Random.maxInt)
 
 
 {-| Fuzz a `SRSData` for a card.
@@ -368,13 +354,13 @@ suiteGetDueCardIndices =
         [ fuzz2 fuzzDeck fuzzTime "Due cards should contain all New cards" <|
             \deck time ->
                 let
-                    dueDeck : List { srsData : SRSData }
-                    dueDeck =
-                        List.filterMap (\i -> Array.get i deck.cards) (getDueCardIndices time deck)
+                    due : List Int
+                    due =
+                        getDueCardIndices time deck
                 in
-                Array.filter (\c -> not <| List.member c dueDeck) deck.cards
-                    |> Array.toList
-                    |> ListX.count ((==) New << .srsData)
+                Array.toIndexedList deck.cards
+                    |> List.filter (not << flip List.member due << Tuple.first)
+                    |> ListX.count ((==) New << .srsData << Tuple.second)
                     |> Expect.equal 0
         , fuzz2 fuzzDeck fuzzTime "Due cards should not contain Graduated cards" <|
             \deck time ->
@@ -384,9 +370,9 @@ suiteGetDueCardIndices =
         , fuzz2 fuzzDeck fuzzTime "Due cards should contain all cards that are due" <|
             \deck time ->
                 let
-                    dueDeck : List { srsData : SRSData }
-                    dueDeck =
-                        List.filterMap (\i -> Array.get i deck.cards) (getDueCardIndices time deck)
+                    due : List Int
+                    due =
+                        getDueCardIndices time deck
 
                     overdueAmount : Natural -> Time.Posix -> Float
                     overdueAmount box reviewed =
@@ -405,9 +391,9 @@ suiteGetDueCardIndices =
                             New ->
                                 True
                 in
-                Array.filter (\c -> not <| List.member c dueDeck) deck.cards
-                    |> Array.toList
-                    |> ListX.count isDue
+                Array.toIndexedList deck.cards
+                    |> List.filter (not << flip List.member due << Tuple.first)
+                    |> ListX.count (isDue << Tuple.second)
                     |> Expect.equal 0
         , fuzz2 fuzzDeck fuzzTime "Due cards should not contain cards that are not due" <|
             \deck time ->
@@ -513,10 +499,6 @@ suiteGetDueCardIndicesWithDetails =
 
                             New ->
                                 NewCard
-
-                    step : ( { srsData : Box }, QueueDetails ) -> Bool -> Bool
-                    step ( c, queue ) acc =
-                        acc && checkQueue c == queue
                 in
                 getDueCardIndicesWithDetails time deck
                     |> List.filterMap
@@ -524,7 +506,7 @@ suiteGetDueCardIndicesWithDetails =
                             Array.get index deck.cards
                                 |> Maybe.map (\c -> ( c, queueDetails ))
                         )
-                    |> List.foldl step True
+                    |> List.all (\( c, queue ) -> checkQueue c == queue)
                     |> Expect.true "Incorrect queue status!"
         , fuzz2 fuzzDeck fuzzTime "WithDetails should return the same indices in the same order as without" <|
             \deck time ->

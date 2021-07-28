@@ -4,15 +4,16 @@ module SpacedRepetition.Internal.SMTwoAnki exposing
     , Minutes
     , QueueStatus(..)
     , TimeInterval
+    , addDay
+    , adjustEase
     , createEase
     , decodeDayInterval
     , decodeEase
-    , decodeTime
     , easeToFloat
     , encodeDayInterval
     , encodeEase
     , encodeMinuteInterval
-    , encodeTime
+    , minInterval
     , minutesToDayInterval
     , timeIntervalFromDays
     , timeIntervalFromMinutes
@@ -68,7 +69,10 @@ type QueueStatus
         , oldInterval : TimeInterval Days
         , step : Natural
         }
-    | Learning { lastReviewed : Time.Posix, step : Natural }
+    | Learning
+        { lastReviewed : Time.Posix
+        , step : Natural
+        }
     | New
     | Review
         { ease : Ease
@@ -90,6 +94,13 @@ createEase f =
 easeToFloat : Ease -> Float
 easeToFloat (Ease f) =
     f
+
+
+{-| Adjust an `Ease` by an amount.
+-}
+adjustEase : Float -> Ease -> Ease
+adjustEase amt (Ease f) =
+    createEase <| f + amt
 
 
 {-| Decode an `Ease` from JSON, ensuring it is at least 1.3.
@@ -125,6 +136,20 @@ timeIntervalToDays (TimeInterval i) =
 minutesToDayInterval : Int -> TimeInterval Days
 minutesToDayInterval i =
     TimeInterval << max 1440 <| 1440 * (i // 1440)
+
+
+{-| Increment an interval in days by one day.
+-}
+addDay : TimeInterval a -> TimeInterval a
+addDay (TimeInterval i) =
+    TimeInterval <| i + 1440
+
+
+{-| Get the lesser of two intervals.
+-}
+minInterval : TimeInterval a -> TimeInterval a -> TimeInterval a
+minInterval (TimeInterval i) (TimeInterval j) =
+    TimeInterval <| min i j
 
 
 {-| Convert a number of minutes to a `TimeInterval`, ensuring it is at least 1
@@ -167,19 +192,3 @@ minutes).
 encodeMinuteInterval : TimeInterval Minutes -> Encode.Value
 encodeMinuteInterval interval =
     Encode.int <| timeIntervalToMinutes interval
-
-
-{-| Decode a `Time.Posix` from JSON, where the value has been stored as seconds,
-since that loss of precision is acceptable for our purposes.
--}
-decodeTime : Decoder Time.Posix
-decodeTime =
-    Decode.map (\t -> Time.millisToPosix <| t * 1000) Decode.int
-
-
-{-| Encode a `Time.Posix` as JSON, storing the value as seconds, since that loss
-of precision is acceptable for our purposes.
--}
-encodeTime : Time.Posix -> Encode.Value
-encodeTime t =
-    Encode.int <| Time.posixToMillis t // 1000

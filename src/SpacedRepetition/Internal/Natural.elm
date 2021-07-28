@@ -1,4 +1,18 @@
-module SpacedRepetition.Internal.Natural exposing (Natural, compare, decode, encode, fromInt, max, nil, pred, six, succ, toFloat, toInt)
+module SpacedRepetition.Internal.Natural exposing
+    ( Natural
+    , compare
+    , decode
+    , eight
+    , encode
+    , fromInt
+    , max
+    , nil
+    , pred
+    , six
+    , succ
+    , toFloat
+    , toInt
+    )
 
 import Json.Decode as Decode exposing (Decoder)
 import Json.Encode as Encode
@@ -22,6 +36,13 @@ nil =
 six : Natural
 six =
     Natural 6
+
+
+{-| 8
+-}
+eight : Natural
+eight =
+    Natural 8
 
 
 {-| Get the number after the current one.

@@ -8,18 +8,17 @@ module TestSMTwoPlus exposing
 
 import Array exposing (Array)
 import Array.Extra as ArrayX
+import Basics.Extra exposing (flip)
 import Expect exposing (Expectation, FloatingPointTolerance(..))
 import Fuzz
     exposing
         ( Fuzzer
         , floatRange
         , int
-        , intRange
         )
 import Json.Decode as Decode
 import Json.Encode as Encode
 import List.Extra as ListX
-import Random
 import SpacedRepetition.Internal.SMTwoPlus
     exposing
         ( Difficulty
@@ -48,6 +47,7 @@ import SpacedRepetition.SMTwoPlus
 import Test exposing (Test, describe, fuzz, fuzz2, fuzz3)
 import Time
 import Time.Extra exposing (Interval(..), diff)
+import Util exposing (boundedGreaterThan, boundedLessThan, fuzzTime)
 
 
 {-| Fuzz a difficulty.
@@ -110,13 +110,6 @@ fuzzDiffOverdueCards =
         fuzzTime
         fuzzTime
         fuzzInterval
-
-
-{-| Fuzz a time.
--}
-fuzzTime : Fuzzer Time.Posix
-fuzzTime =
-    Fuzz.map (\i -> Time.millisToPosix (1000 * i)) (intRange 1 Random.maxInt)
 
 
 {-| Fuzz a card.
@@ -244,30 +237,6 @@ zeroPercentDue time perf card =
 
         Nothing ->
             False
-
-
-{-| Given a lower bound and two numbers, ensure that the latter is less than the
-former or bounded at the lower bound.
--}
-boundedLessThan : Float -> Float -> Float -> Expectation
-boundedLessThan bound old new =
-    if old <= bound then
-        Expect.within (Absolute 0.000000001) bound new
-
-    else
-        Expect.lessThan old new
-
-
-{-| Given an upper bound and two numbers, ensure that the latter is greater than
-the former or bounded at the upper bound.
--}
-boundedGreaterThan : Float -> Float -> Float -> Expectation
-boundedGreaterThan bound old new =
-    if old >= bound then
-        Expect.within (Absolute 0.000000001) bound new
-
-    else
-        Expect.greaterThan old new
 
 
 {-| Confirm that a card was scheduled properly.
@@ -565,33 +534,29 @@ suiteGetDueCardIndices =
         [ fuzz2 fuzzDeck fuzzTime "Due cards should contain all New cards" <|
             \deck time ->
                 let
-                    dueDeck : List { srsData : SRSData }
-                    dueDeck =
-                        List.filterMap (\i -> Array.get i deck) (getDueCardIndices time deck)
+                    due : List Int
+                    due =
+                        getDueCardIndices time deck
                 in
-                Array.filter (\c -> not <| List.member c dueDeck) deck
-                    |> Array.toList
-                    |> ListX.count ((==) New << .srsData)
+                Array.toIndexedList deck
+                    |> List.filter (not << flip List.member due << Tuple.first)
+                    |> ListX.count ((==) New << .srsData << Tuple.second)
                     |> Expect.equal 0
         , fuzz2 fuzzDeck fuzzTime "Due cards should contain all Reviewed cards that are due" <|
             \deck time ->
                 let
-                    dueDeck : List { srsData : SRSData }
-                    dueDeck =
-                        List.filterMap (\i -> Array.get i deck) (getDueCardIndices time deck)
+                    due : List Int
+                    due =
+                        getDueCardIndices time deck
                 in
-                Array.filter (\c -> not <| List.member c dueDeck) deck
-                    |> Array.toList
-                    |> ListX.count (isDue time)
+                Array.toIndexedList deck
+                    |> List.filter (not << flip List.member due << Tuple.first)
+                    |> ListX.count (isDue time << Tuple.second)
                     |> Expect.equal 0
         , fuzz2 fuzzDeck fuzzTime "Due cards should not contain any Reviewed cards that are not due" <|
             \deck time ->
-                let
-                    dueDeck : List { srsData : SRSData }
-                    dueDeck =
-                        List.filterMap (\i -> Array.get i deck) (getDueCardIndices time deck)
-                in
-                dueDeck
+                getDueCardIndices time deck
+                    |> List.filterMap (\i -> Array.get i deck)
                     |> ListX.count (not << isDue time)
                     |> Expect.equal 0
         , fuzz2 fuzzDeck fuzzTime "Due cards should be sorted." <|
@@ -667,10 +632,6 @@ suiteGetDueCardIndicesWithDetails =
                                     { intervalInDays = intervalToFloat interval
                                     , lastReviewed = lastReviewed
                                     }
-
-                    step : ( { srsData : SRSData }, QueueDetails ) -> Bool -> Bool
-                    step ( c, queue ) acc =
-                        acc && checkQueue c == queue
                 in
                 getDueCardIndicesWithDetails time deck
                     |> List.filterMap
@@ -678,7 +639,7 @@ suiteGetDueCardIndicesWithDetails =
                             Array.get index deck
                                 |> Maybe.map (\c -> ( c, queueDetails ))
                         )
-                    |> List.foldl step True
+                    |> List.all (\( c, queue ) -> checkQueue c == queue)
                     |> Expect.true "Incorrect queue status!"
         , fuzz2 fuzzDeck fuzzTime "WithDetails should return the same indices in the same order as without" <|
             \deck time ->

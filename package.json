@@ -5,7 +5,7 @@
     "test:make": "elm make --docs=docs.json",
     "test:format": "elm-format src/ tests/ --validate",
     "test:run": "elm-test",
-    "test:review": "elm-review",
+    "test:review": "elm-review --template SiriusStarr/elm-review-sorted/preview#fix-stable-sort",
     "preview-docs": "elm-doc-preview",
     "postinstall": "elm-tooling install"
   },

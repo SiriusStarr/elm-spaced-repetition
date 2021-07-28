@@ -30,13 +30,13 @@ import Time
 {-| Phantom type for a `TimeInterval` in minutes.
 -}
 type Minutes
-    = Minutes
+    = Minutes Never
 
 
 {-| Phantom type for a `TimeInterval` consisting of a round number of days.
 -}
 type Days
-    = Days
+    = Days Never
 
 
 {-| Opaque type for the "ease" of a card, ensuring it is at least 1.3.

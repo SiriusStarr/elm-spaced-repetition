@@ -408,46 +408,46 @@ isDue time { srsData } =
 -}
 updateEFactor : Answer -> Card a -> Card a
 updateEFactor answer card =
-    let
-        q : Float
-        q =
-            case answer of
-                CorrectWithDifficulty ->
-                    3
-
-                CorrectWithHesitation ->
-                    4
-
-                IncorrectButFamiliar ->
-                    1
-
-                IncorrectButRemembered ->
-                    2
-
-                NoRecollection ->
-                    0
-
-                Perfect ->
-                    5
-
-        oldEFactor : Float
-        oldEFactor =
-            case card.srsData of
-                Repeating { ease } ->
-                    eFactorToFloat ease
-
-                Reviewed { ease } ->
-                    eFactorToFloat ease
-
-                _ ->
-                    0
-
-        updatedEFactor : Float
-        updatedEFactor =
-            oldEFactor + (0.1 - (5 - q) * (0.08 + (5 - q) * 0.02))
-    in
     case card.srsData of
         Reviewed { lastReviewed, streak } ->
+            let
+                q : Float
+                q =
+                    case answer of
+                        CorrectWithDifficulty ->
+                            3
+
+                        CorrectWithHesitation ->
+                            4
+
+                        IncorrectButFamiliar ->
+                            1
+
+                        IncorrectButRemembered ->
+                            2
+
+                        NoRecollection ->
+                            0
+
+                        Perfect ->
+                            5
+
+                oldEFactor : Float
+                oldEFactor =
+                    case card.srsData of
+                        Repeating { ease } ->
+                            eFactorToFloat ease
+
+                        Reviewed { ease } ->
+                            eFactorToFloat ease
+
+                        _ ->
+                            0
+
+                updatedEFactor : Float
+                updatedEFactor =
+                    oldEFactor + (0.1 - (5 - q) * (0.08 + (5 - q) * 0.02))
+            in
             { card
                 | srsData =
                     Reviewed

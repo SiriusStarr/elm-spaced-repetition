@@ -214,17 +214,14 @@ suiteAnswerCard =
             \( time, answer, settings ) card ->
                 answerCard time answer settings card
                     |> (\c ->
-                            let
-                                maxBox : Int
-                                maxBox =
-                                    Natural.toInt <| highestBoxIndex settings.numBoxes
-                            in
                             case c.srsData of
                                 BoxN { box } ->
                                     Natural.toInt box
                                         |> Expect.all
                                             [ Expect.atLeast 0
-                                            , Expect.atMost maxBox
+                                            , highestBoxIndex settings.numBoxes
+                                                |> Natural.toInt
+                                                |> Expect.atMost
                                             ]
 
                                 _ ->

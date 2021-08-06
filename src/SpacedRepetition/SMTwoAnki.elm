@@ -871,35 +871,35 @@ card is, i.e. `0.9` is 90% of the way to being overdue and `2` is the interval a
 -}
 overdueAmount : AnkiSettings -> Time.Posix -> Card a -> ( Float, Int )
 overdueAmount settings time card =
-    let
-        interval : Int
-        interval =
-            getCurrentIntervalInMinutes settings card
-
-        reviewed : Time.Posix
-        reviewed =
-            case card.srsData of
-                Lapsed { lastReviewed } ->
-                    lastReviewed
-
-                Learning { lastReviewed } ->
-                    lastReviewed
-
-                New ->
-                    Time.millisToPosix 0
-
-                Review { lastReviewed } ->
-                    lastReviewed
-
-        minutesOverdue : Int
-        minutesOverdue =
-            diff Minute Time.utc reviewed time - interval
-    in
     case card.srsData of
         New ->
             ( 1.0, 0 )
 
         _ ->
+            let
+                reviewed : Time.Posix
+                reviewed =
+                    case card.srsData of
+                        Lapsed { lastReviewed } ->
+                            lastReviewed
+
+                        Learning { lastReviewed } ->
+                            lastReviewed
+
+                        New ->
+                            Time.millisToPosix 0
+
+                        Review { lastReviewed } ->
+                            lastReviewed
+
+                interval : Int
+                interval =
+                    getCurrentIntervalInMinutes settings card
+
+                minutesOverdue : Int
+                minutesOverdue =
+                    diff Minute Time.utc reviewed time - interval
+            in
             -- (Relative Amount Overdue, Absolute Minutes Overdue)
             ( toFloat minutesOverdue / toFloat interval, minutesOverdue )
 
@@ -1113,39 +1113,50 @@ follows:
 -}
 fuzzInterval : Time.Posix -> TimeInterval Days -> TimeInterval Days
 fuzzInterval time interval =
+    Random.step (fuzzedIntervalGenerator interval)
+        (Random.initialSeed <| Time.posixToMillis time)
+        |> Tuple.first
+
+
+{-| A random generator that can fuzz a provided time interval by a random
+amount as follows:
+
+  - 1 day -- Do not fuzz.
+  - 2 days -- Fuzz to 2 or 3 days.
+  - < 7 days -- Fuzz by plus or minus 25%.
+  - < 30 days -- Fuzz by plus or minus 15%.
+  - Otherwise -- Fuzz by plus or minus 5%.
+
+-}
+fuzzedIntervalGenerator : TimeInterval Days -> Random.Generator (TimeInterval Days)
+fuzzedIntervalGenerator interval =
     let
         i : Int
         i =
             timeIntervalToDays interval
 
-        gen : Random.Generator (TimeInterval Days)
-        gen =
+        ( minInterval, maxInterval ) =
             -- These are the fuzz amounts per Anki's source
-            let
-                fuzz : Int
-                fuzz =
-                    if i < 7 then
-                        round << max 1 <| toFloat i * 0.25
+            case compare i 2 of
+                EQ ->
+                    ( 2, 3 )
 
-                    else if i < 30 then
-                        round << max 2 <| toFloat i * 0.15
+                GT ->
+                    let
+                        fuzz : Int
+                        fuzz =
+                            if i < 7 then
+                                round << max 1 <| toFloat i * 0.25
 
-                    else
-                        round << max 4 <| toFloat i * 0.05
+                            else if i < 30 then
+                                round << max 2 <| toFloat i * 0.15
 
-                ( minInterval, maxInterval ) =
-                    case compare i 2 of
-                        EQ ->
-                            ( 2, 3 )
+                            else
+                                round << max 4 <| toFloat i * 0.05
+                    in
+                    ( i - fuzz, i + fuzz )
 
-                        GT ->
-                            ( i - fuzz, i + fuzz )
-
-                        LT ->
-                            ( 1, 1 )
-            in
-            Random.map timeIntervalFromDays <| Random.int minInterval maxInterval
+                LT ->
+                    ( 1, 1 )
     in
-    Random.step gen
-        (Random.initialSeed <| Time.posixToMillis time)
-        |> Tuple.first
+    Random.map timeIntervalFromDays <| Random.int minInterval maxInterval

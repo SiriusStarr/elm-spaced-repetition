@@ -121,9 +121,9 @@ import Time.Extra exposing (Interval(..), diff)
 {-| `LeitnerSettings` customizes the behavior of this algorithm. Three parameters must be defined: the behavior of the system upon an incorrect answer, the spacing (interval) between "boxes", and the total number of boxes before a card "graduates." No builder functions are provided, as only three settings exist and the Leitner system doesn't have "defaults" to speak of. Additionally, no JSON encoder/decoder is provided because serializing functions (for `SpacingFunction`) is non-trivial.
 -}
 type alias LeitnerSettings =
-    { boxSpacing : SpacingFunction
+    { onIncorrect : OnIncorrect
+    , boxSpacing : SpacingFunction
     , numBoxes : NumberOfBoxes
-    , onIncorrect : OnIncorrect
     }
 
 
@@ -274,11 +274,11 @@ decoderSRSData =
 
 -}
 type Answer
-    = BackToFirstBox
-    | Correct
+    = Correct
     | Incorrect
-    | MoveBoxes Int
     | Pass
+    | MoveBoxes Int
+    | BackToFirstBox
 
 
 {-| `answerCardInDeck` functions analogously to `answerCard` but handles maintenance of the `Deck`, which is typically what one would desire. When a card is presented to the user and answered, `answerCardInDeck` should be called with the current time (in the `Time.Posix` format returned by the `now` task of the core `Time` module), an `Answer`, the index of the card in the `Deck` (e.g. what is returned by the `getDueCardIndices` function), and the `Deck` itself. It returns the updated `Deck`. Use this function if you simply want to store a `Deck` and not worry about updating it manually (which is most likely what you want). Otherwise, use `answerCard` to handle updating the `Deck` manually. Handling the presentation of a card is the responsibility of the implementing program, as various behaviors might be desirable in different cases. Note that if an invalid (out of bounds) index is passed, the `Deck` is returned unaltered.
@@ -368,13 +368,13 @@ getDueCardIndices time deck =
   - `InBox {...}` -- A card that is being reviewed for retention.
       - `lastReviewed : Time.Posix` -- The date and time the card was last reviewed.
       - `boxNumber : Int` -- The "box" that the card is currently in (starting from `0`).
-  - `Graduated` -- A card that has been successfully graduated and thus is no longer being studied.
+  - `GraduatedCard` -- A card that has been successfully graduated and thus is no longer being studied.
 
 -}
 type QueueDetails
-    = GraduatedCard
+    = NewCard
     | InBox { boxNumber : Int, lastReviewed : Time.Posix }
-    | NewCard
+    | GraduatedCard
 
 
 {-| `getDueCardIndicesWithDetails` takes settings (`LeitnerSettings`), the current time (in the `Time.Posix` format returned by the `now` task of the core `Time` module) and a `Deck` and returns the subset of the `Deck` that is due for review (as a list of records), providing their index and which queue they are currently in, with any relevant queue details. The returned indices will be sorted in the following order:

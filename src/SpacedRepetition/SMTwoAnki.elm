@@ -201,18 +201,23 @@ import Time.Extra exposing (Interval(..), diff)
 
 -}
 type alias AnkiSettings =
-    { easyBonus : Float
-    , easyInterval : TimeInterval Days
+    { -- New Settings
+      newSteps : List (TimeInterval Minutes)
     , graduatingInterval : TimeInterval Days
-    , hardInterval : Float
-    , intervalModifier : Float
-    , lapseMinimumInterval : TimeInterval Days
-    , lapseNewInterval : Float
-    , lapseSteps : List (TimeInterval Minutes)
-    , leechThreshold : Natural
-    , maximumInterval : TimeInterval Days
-    , newSteps : List (TimeInterval Minutes)
+    , easyInterval : TimeInterval Days
     , startingEase : Ease
+
+    -- Review Settings
+    , easyBonus : Float
+    , intervalModifier : Float
+    , maximumInterval : TimeInterval Days
+    , hardInterval : Float
+
+    -- Lapse Settings
+    , lapseSteps : List (TimeInterval Minutes)
+    , lapseNewInterval : Float
+    , lapseMinimumInterval : TimeInterval Days
+    , leechThreshold : Natural
     }
 
 
@@ -523,9 +528,9 @@ decoderAnkiSettings =
 -}
 type Answer
     = Again
-    | Easy
-    | Good
     | Hard
+    | Good
+    | Easy
 
 
 {-| `answerCardInDeck` functions analogously to `answerCard` but handles maintenance of the `Deck`, which is typically what one would desire. When a card is presented to the user and answered, `answerCardInDeck` should be called with the current time (in the `Time.Posix` format returned by the `now` task of the core `Time` module), an `Answer`, the index of the card in the `Deck`, and the `Deck` itself. It returns the updated `Deck`. Use this function if you simply want to store a `Deck` and not worry about updating it manually (which is most likely what you want). Otherwise, use `answerCard` to handle updating the `Deck` manually. Handling the presentation of a card is the responsibility of the implementing program, as various behaviors might be desirable in different cases. Note that if an invalid (out of bounds) index is passed, the `Deck` is returned unaltered.
@@ -637,27 +642,27 @@ getLeeches deck =
 
   - `LapsedQueue {...}` -- A card that has lapsed, i.e. one that was being reviewed but was answered incorrectly and is now being re-learned.
       - `lastReviewed : Time.Posix` -- The date and time the card was last reviewed.
-      - `reviewIntervalInDays : Int` -- The interval, in days from the date last seen, that the card was slated for review in prior to last being forgotten/ answered incorrectly.
+      - `formerIntervalInDays : Int` -- The interval, in days from the date last seen, that the card was slated for review in prior to last being forgotten/ answered incorrectly.
       - `intervalInMinutes : Int` -- The interval, in minutes from the date last seen, that the card is slated for review in.
       - `lapses : Int` -- The number of times the card has "lapsed," i.e. been forgotten/incorrectly answered by the user.
 
 -}
 type QueueDetails
-    = LapsedQueue
-        { formerIntervalInDays : Int
+    = NewCard
+    | LearningQueue
+        { lastReviewed : Time.Posix
+        , intervalInMinutes : Int
+        }
+    | ReviewQueue
+        { lastReviewed : Time.Posix
+        , intervalInDays : Int
+        , lapses : Int
+        }
+    | LapsedQueue
+        { lastReviewed : Time.Posix
+        , formerIntervalInDays : Int
         , intervalInMinutes : Int
         , lapses : Int
-        , lastReviewed : Time.Posix
-        }
-    | LearningQueue
-        { intervalInMinutes : Int
-        , lastReviewed : Time.Posix
-        }
-    | NewCard
-    | ReviewQueue
-        { intervalInDays : Int
-        , lapses : Int
-        , lastReviewed : Time.Posix
         }
 
 

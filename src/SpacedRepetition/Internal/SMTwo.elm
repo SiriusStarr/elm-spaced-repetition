@@ -22,22 +22,22 @@ import Time
 correct repetitions are not treated differently and are thus combined.
 -}
 type Streak
-    = One
+    = Zero
+    | One
     | TwoPlus { interval : Natural }
-    | Zero
 
 
 {-| The current review history for a card:
 
   - `New` -- Never before reviewed.
-  - `Repeating` -- Scheduled to be immediately reviewed again due to an incorrect response.
   - `Reviewed` -- Reviewed correctly in the past.
+  - `Repeating` -- Scheduled to be immediately reviewed again due to an incorrect response.
 
 -}
 type ReviewHistory
     = New
-    | Repeating { ease : EFactor, streak : Streak }
     | Reviewed { ease : EFactor, lastReviewed : Time.Posix, streak : Streak }
+    | Repeating { ease : EFactor, streak : Streak }
 
 
 {-| Given how many times a card has been correctly answered in a row, determine the interval between reviews.

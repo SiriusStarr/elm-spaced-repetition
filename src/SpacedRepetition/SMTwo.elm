@@ -222,12 +222,12 @@ decoderSRSData =
 
 -}
 type Answer
-    = CorrectWithDifficulty
+    = Perfect
     | CorrectWithHesitation
-    | IncorrectButFamiliar
+    | CorrectWithDifficulty
     | IncorrectButRemembered
+    | IncorrectButFamiliar
     | NoRecollection
-    | Perfect
 
 
 {-| `answerCardInDeck` functions analogously to `answerCard` but handles maintenance of the `Deck`, which is typically what one would desire. When a card is presented to the user and answered, `answerCardInDeck` should be called with the current time (in the `Time.Posix` format returned by the `now` task of the core `Time` module), an `Answer`, the index of the card in the `Deck`, and the `Deck` itself. It returns the updated `Deck`. Use this function if you simply want to store a `Deck` and not worry about updating it manually (which is most likely what you want). Otherwise, use `answerCard` to handle updating the `Deck` manually. Handling the presentation of a card is the responsibility of the implementing program, as various behaviors might be desirable in different cases. Note that if an invalid (out of bounds) index is passed, the `Deck` is returned unaltered.
@@ -305,8 +305,8 @@ getDueCardIndicesWithDetails time deck =
 -}
 type QueueDetails
     = NewCard
-    | RepeatingQueue { intervalInDays : Int }
     | ReviewQueue { intervalInDays : Int, lastReviewed : Time.Posix }
+    | RepeatingQueue { intervalInDays : Int }
 
 
 {-| `getCardDetails` returns the current queue status for a given card. If you require this for every due card, simply use `getDueCardIndicesWithDetails`.

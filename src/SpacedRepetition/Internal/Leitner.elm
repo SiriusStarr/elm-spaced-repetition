@@ -12,9 +12,9 @@ import Time
 
 -}
 type Box
-    = BoxN { box : Natural, lastReviewed : Time.Posix }
+    = New
+    | BoxN { box : Natural, lastReviewed : Time.Posix }
     | Graduated
-    | New
 
 
 {-| Get the index of the highest box in the system, given the `NumberOfBoxes`.

@@ -62,23 +62,23 @@ type TimeInterval a
 
 -}
 type QueueStatus
-    = Lapsed
-        { ease : Ease
-        , lapses : Natural
-        , lastReviewed : Time.Posix
-        , oldInterval : TimeInterval Days
-        , step : Natural
-        }
+    = New
     | Learning
         { lastReviewed : Time.Posix
         , step : Natural
         }
-    | New
     | Review
         { ease : Ease
         , interval : TimeInterval Days
-        , lapses : Natural
         , lastReviewed : Time.Posix
+        , lapses : Natural
+        }
+    | Lapsed
+        { ease : Ease
+        , oldInterval : TimeInterval Days
+        , lastReviewed : Time.Posix
+        , step : Natural
+        , lapses : Natural
         }
 
 

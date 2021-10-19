@@ -772,7 +772,7 @@ intervalToScale settings answer time card =
         Good ->
             overdueAmount settings time card
                 |> Tuple.second
-                |> (//) 2
+                |> (\minutesOverdue -> minutesOverdue // 2)
                 |> (+) interval
                 |> max interval
 

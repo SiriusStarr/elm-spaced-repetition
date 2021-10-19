@@ -305,7 +305,7 @@ nextInterval settings answer time oldData =
 
                 Good ->
                     overdueAmount settings time oldData
-                        |> (//) 2
+                        |> (\minutesOverdue -> minutesOverdue // 2)
                         |> (+) oldIntervalInMinutes
                         |> max oldIntervalInMinutes
 

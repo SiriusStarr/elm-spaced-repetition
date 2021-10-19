@@ -3,7 +3,7 @@
     "name": "SiriusStarr/elm-spaced-repetition",
     "summary": "Create spaced repetition software using several different popular algorithms.",
     "license": "GPL-3.0",
-    "version": "2.0.0",
+    "version": "2.0.1",
     "exposed-modules": [
         "SpacedRepetition.Leitner",
         "SpacedRepetition.SMTwo",

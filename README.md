@@ -34,8 +34,8 @@ released for free public use when accompanied by the following notice:
 
 **Algorithm SM-2, (C) Copyright SuperMemo World, 1991.**
 
-- <http://www.supermemo.com>
-- <http://www.supermemo.eu>
+* <http://www.supermemo.com>
+* <http://www.supermemo.eu>
 
 For details about this algorithm, please refer to the [following description](https://www.supermemo.com/en/archives1990-2015/english/ol/sm2),
 written by its creator.
@@ -159,3 +159,20 @@ results varies with the algorithm.
 
 The various algorithms provide additional functions/types as necessary for their
 individual implementations.  Refer to their documentation for specifics.
+
+## Changelog
+
+* `2.0.1` -- 🐛 Fixed a bug in `SpacedRepetition.SMTwoAnki` that caused the
+  extra interval from studying an overdue card to not count with `Good` answers.
+  Per the algorithm, half of the overdue amount should be included in
+  calculating the new interval with a `Good` answer.
+* `2.0.0` -- Added `getDueCardIndicesWithDetails` and `getCardDetails` to all
+  modules, allowing one to get information about e.g. what stage of learning a
+  card is in so that it might be displayed differently.   This was a
+  **breaking change** because the return type of
+  `SpacedRepetition.SMTwoAnki.getDueCardIndices` changed to no longer return
+  leech status (use `getDueCardIndicesWithDetails` or `getCardDetails` to get
+  leech status).
+* `1.1.0` -- Added a JSON encoder/decoder for
+  `SpacedRepetition.SMTwoAnki.AnkiSettings`
+* `1.0.0` -- Initial release.

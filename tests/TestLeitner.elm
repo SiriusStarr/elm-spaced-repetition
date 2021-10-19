@@ -63,14 +63,14 @@ suiteAnswerCard =
                 answerCard time answer settings card
                     |> (\c ->
                             case c.srsData of
+                                New ->
+                                    Expect.fail "Card was still 'new' after answering"
+
                                 BoxN { lastReviewed } ->
                                     Expect.equal time lastReviewed
 
                                 Graduated ->
                                     Expect.pass
-
-                                New ->
-                                    Expect.fail "Card was still 'new' after answering"
                        )
         , fuzz2 fuzzResponse fuzzCard "Box should never be < 0 or greater than max boxes" <|
             \( time, answer, settings ) card ->
@@ -114,14 +114,14 @@ suiteAnswerCard =
                                 oldBox : Natural
                                 oldBox =
                                     case card.srsData of
+                                        New ->
+                                            Natural.nil
+
                                         BoxN { box } ->
                                             box
 
                                         Graduated ->
                                             Natural.succ maxBox
-
-                                        New ->
-                                            Natural.nil
 
                                 maxBox : Natural
                                 maxBox =
@@ -130,19 +130,16 @@ suiteAnswerCard =
                                 newBox : Natural
                                 newBox =
                                     case data of
+                                        New ->
+                                            Natural.nil
+
                                         BoxN { box } ->
                                             box
 
                                         Graduated ->
                                             Natural.succ maxBox
-
-                                        New ->
-                                            Natural.nil
                             in
                             case ( answer, settings.onIncorrect ) of
-                                ( BackToFirstBox, _ ) ->
-                                    expectFirstBox
-
                                 ( Correct, _ ) ->
                                     expectMoved 1
 
@@ -152,11 +149,14 @@ suiteAnswerCard =
                                 ( Incorrect, BackToStart ) ->
                                     expectFirstBox
 
+                                ( Pass, _ ) ->
+                                    expectMoved 0
+
                                 ( MoveBoxes i, _ ) ->
                                     expectMoved i
 
-                                ( Pass, _ ) ->
-                                    expectMoved 0
+                                ( BackToFirstBox, _ ) ->
+                                    expectFirstBox
                        )
         , fuzz2 fuzzResponse fuzzExtendedCard "Non-srs fields should never be changed by answering" <|
             \( time, answer, settings ) card ->
@@ -250,14 +250,14 @@ suiteGetDueCardIndices =
                     isDue : { srsData : Box } -> Bool
                     isDue c =
                         case c.srsData of
+                            New ->
+                                True
+
                             BoxN { box, lastReviewed } ->
                                 overdueAmount box lastReviewed >= 1
 
                             Graduated ->
                                 False
-
-                            New ->
-                                True
 
                     overdueAmount : Natural -> Time.Posix -> Float
                     overdueAmount box reviewed =
@@ -274,14 +274,14 @@ suiteGetDueCardIndices =
                     isDue : { srsData : Box } -> Bool
                     isDue c =
                         case c.srsData of
+                            New ->
+                                True
+
                             BoxN { box, lastReviewed } ->
                                 overdueAmount box lastReviewed >= 1
 
                             Graduated ->
                                 False
-
-                            New ->
-                                True
 
                     overdueAmount : Natural -> Time.Posix -> Float
                     overdueAmount box reviewed =
@@ -314,22 +314,11 @@ suiteGetDueCardIndices =
                                 ( nextCard, goodSort )
                         in
                         case ( lastCard.srsData, nextCard.srsData ) of
-                            ( Graduated, _ ) ->
-                                -- Shouldn't be graduated cards, period.
-                                bad
-
-                            ( _, Graduated ) ->
-                                -- Shouldn't be graduated cards, period.
-                                bad
-
                             ( New, New ) ->
                                 good
 
                             ( New, _ ) ->
                                 bad
-
-                            ( _, New ) ->
-                                good
 
                             ( BoxN b1, BoxN b2 ) ->
                                 if overdueAmount b1 >= overdueAmount b2 then
@@ -337,6 +326,17 @@ suiteGetDueCardIndices =
 
                                 else
                                     bad
+
+                            ( Graduated, _ ) ->
+                                -- Shouldn't be graduated cards, period.
+                                bad
+
+                            ( _, New ) ->
+                                good
+
+                            ( _, Graduated ) ->
+                                -- Shouldn't be graduated cards, period.
+                                bad
 
                     overdueAmount : { box : Natural, lastReviewed : Time.Posix } -> Float
                     overdueAmount { box, lastReviewed } =
@@ -361,6 +361,9 @@ suiteGetDueCardIndicesWithDetails =
                     checkQueue : { srsData : Box } -> QueueDetails
                     checkQueue c =
                         case c.srsData of
+                            New ->
+                                NewCard
+
                             BoxN { box, lastReviewed } ->
                                 InBox
                                     { boxNumber = Natural.toInt box
@@ -369,9 +372,6 @@ suiteGetDueCardIndicesWithDetails =
 
                             Graduated ->
                                 GraduatedCard
-
-                            New ->
-                                NewCard
                 in
                 getDueCardIndicesWithDetails time deck
                     |> List.filterMap

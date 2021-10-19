@@ -221,6 +221,9 @@ newSRSData =
 encoderSRSData : SRSData -> Encode.Value
 encoderSRSData data =
     case data of
+        New ->
+            Encode.null
+
         BoxN { box, lastReviewed } ->
             Encode.object
                 [ ( "boxNum", Natural.encode box )
@@ -229,9 +232,6 @@ encoderSRSData data =
 
         Graduated ->
             Encode.string "G"
-
-        New ->
-            Encode.null
 
 
 {-| `decoderSRSData` provides a Json decoder for decoding `SRSData` for a `Card`.
@@ -299,14 +299,14 @@ answerCard time answer { onIncorrect, numBoxes } card =
         currentBox : Natural
         currentBox =
             case card.srsData of
+                New ->
+                    Natural.nil
+
                 BoxN { box } ->
                     box
 
                 Graduated ->
                     Natural.succ <| highestBoxIndex numBoxes
-
-                New ->
-                    Natural.nil
 
         setBox : Natural -> Card a
         setBox n =
@@ -317,9 +317,6 @@ answerCard time answer { onIncorrect, numBoxes } card =
                 { card | srsData = BoxN { box = n, lastReviewed = time } }
     in
     case answer of
-        BackToFirstBox ->
-            setBox Natural.nil
-
         Correct ->
             setBox <| Natural.succ currentBox
 
@@ -331,6 +328,9 @@ answerCard time answer { onIncorrect, numBoxes } card =
                 BackToStart ->
                     setBox Natural.nil
 
+        Pass ->
+            setBox currentBox
+
         MoveBoxes i ->
             Natural.toInt currentBox
                 |> (+) i
@@ -338,8 +338,8 @@ answerCard time answer { onIncorrect, numBoxes } card =
                 |> Maybe.withDefault Natural.nil
                 |> setBox
 
-        Pass ->
-            setBox currentBox
+        BackToFirstBox ->
+            setBox Natural.nil
 
 
 {-| `getDueCardIndices` takes settings (`LeitnerSettings`), the current time (in the `Time.Posix` format returned by the `now` task of the core `Time` module) and a `Deck` and returns the indices of the subset of the `Deck` that is due for review (as `List Int`). The returned indices will be sorted in the following order:
@@ -420,15 +420,6 @@ compareDue : LeitnerSettings -> Time.Posix -> Card a -> Card a -> Order
 compareDue settings time c1 c2 =
     case ( c1.srsData, c2.srsData ) of
         -- New cards go last
-        ( Graduated, Graduated ) ->
-            EQ
-
-        ( _, Graduated ) ->
-            GT
-
-        ( Graduated, _ ) ->
-            LT
-
         ( New, New ) ->
             EQ
 
@@ -438,7 +429,6 @@ compareDue settings time c1 c2 =
         ( BoxN _, New ) ->
             GT
 
-        -- If neither is new, then rank "more due" cards first (by proportion past due).  EQ case doesn't matter, since order becomes irrelevant then.
         ( BoxN b1, BoxN b2 ) ->
             if
                 overdueAmount settings time b1.lastReviewed b1.box
@@ -449,12 +439,25 @@ compareDue settings time c1 c2 =
             else
                 LT
 
+        ( Graduated, Graduated ) ->
+            EQ
+
+        ( _, Graduated ) ->
+            GT
+
+        -- If neither is new, then rank "more due" cards first (by proportion past due).  EQ case doesn't matter, since order becomes irrelevant then.
+        ( Graduated, _ ) ->
+            LT
+
 
 {-| Given a card, return its current box status.
 -}
 getQueueDetails : Card a -> QueueDetails
 getQueueDetails c =
     case c.srsData of
+        New ->
+            NewCard
+
         BoxN { box, lastReviewed } ->
             InBox
                 { boxNumber = Natural.toInt box
@@ -464,23 +467,20 @@ getQueueDetails c =
         Graduated ->
             GraduatedCard
 
-        New ->
-            NewCard
-
 
 {-| Check if a card is currently due to be studied.
 -}
 isDue : LeitnerSettings -> Time.Posix -> Card a -> Bool
 isDue settings time { srsData } =
     case srsData of
+        New ->
+            True
+
         BoxN { box, lastReviewed } ->
             overdueAmount settings time lastReviewed box >= 1
 
         Graduated ->
             False
-
-        New ->
-            True
 
 
 {-| Given the current time, the time a card was last reviewed, and the box

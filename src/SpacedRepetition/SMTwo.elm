@@ -169,16 +169,16 @@ encoderSRSData data =
         New ->
             Encode.null
 
-        Repeating { ease, streak } ->
-            Encode.object
-                [ ( "eFactor", encodeEFactor ease )
-                , ( "streak", encodeStreak streak )
-                ]
-
         Reviewed { ease, lastReviewed, streak } ->
             Encode.object
                 [ ( "eFactor", encodeEFactor ease )
                 , ( "priorDate", Time.encode lastReviewed )
+                , ( "streak", encodeStreak streak )
+                ]
+
+        Repeating { ease, streak } ->
+            Encode.object
+                [ ( "eFactor", encodeEFactor ease )
                 , ( "streak", encodeStreak streak )
                 ]
 
@@ -258,58 +258,58 @@ scheduleCard time answer card =
                     Repeating { ease = newEF, streak = Zero }
             in
             case answer of
+                Perfect ->
+                    Reviewed { ease = newEF, lastReviewed = time, streak = incrementStreak }
+
+                CorrectWithHesitation ->
+                    Reviewed { ease = newEF, lastReviewed = time, streak = incrementStreak }
+
                 CorrectWithDifficulty ->
                     case card.srsData of
                         New ->
                             breakStreak
 
-                        Repeating r ->
-                            Repeating { r | ease = newEF }
-
                         Reviewed { streak } ->
                             Repeating { ease = newEF, streak = streak }
 
-                CorrectWithHesitation ->
-                    Reviewed { ease = newEF, lastReviewed = time, streak = incrementStreak }
-
-                IncorrectButFamiliar ->
-                    breakStreak
+                        Repeating r ->
+                            Repeating { r | ease = newEF }
 
                 IncorrectButRemembered ->
                     breakStreak
 
-                NoRecollection ->
+                IncorrectButFamiliar ->
                     breakStreak
 
-                Perfect ->
-                    Reviewed { ease = newEF, lastReviewed = time, streak = incrementStreak }
+                NoRecollection ->
+                    breakStreak
 
         ( newEF, incrementStreak ) =
             case card.srsData of
                 New ->
                     ( defaultEFactor, One )
 
-                Repeating { ease, streak } ->
-                    case streak of
-                        One ->
-                            ( ease, continueStreak ease streak )
-
-                        TwoPlus _ ->
-                            ( ease, continueStreak ease streak )
-
-                        Zero ->
-                            ( ease, One )
-
                 Reviewed { ease, streak } ->
                     case streak of
+                        Zero ->
+                            ( ease, One )
+
                         One ->
                             ( ease, continueStreak ease streak )
 
                         TwoPlus _ ->
                             ( ease, continueStreak ease streak )
 
+                Repeating { ease, streak } ->
+                    case streak of
                         Zero ->
                             ( ease, One )
+
+                        One ->
+                            ( ease, continueStreak ease streak )
+
+                        TwoPlus _ ->
+                            ( ease, continueStreak ease streak )
 
         continueStreak : EFactor -> Streak -> Streak
         continueStreak eF streak =
@@ -338,10 +338,10 @@ updateEFactor answer card =
                 oldEFactor : Float
                 oldEFactor =
                     case card.srsData of
-                        Repeating { ease } ->
+                        Reviewed { ease } ->
                             eFactorToFloat ease
 
-                        Reviewed { ease } ->
+                        Repeating { ease } ->
                             eFactorToFloat ease
 
                         _ ->
@@ -350,23 +350,23 @@ updateEFactor answer card =
                 q : Float
                 q =
                     case answer of
-                        CorrectWithDifficulty ->
-                            3
+                        Perfect ->
+                            5
 
                         CorrectWithHesitation ->
                             4
 
-                        IncorrectButFamiliar ->
-                            1
+                        CorrectWithDifficulty ->
+                            3
 
                         IncorrectButRemembered ->
                             2
 
+                        IncorrectButFamiliar ->
+                            1
+
                         NoRecollection ->
                             0
-
-                        Perfect ->
-                            5
             in
             { card
                 | srsData =
@@ -473,16 +473,6 @@ compareDue time c1 c2 =
             GT
 
         -- Repeating cards go before new but after reviewing
-        ( Repeating _, Repeating _ ) ->
-            EQ
-
-        ( Repeating _, _ ) ->
-            LT
-
-        ( _, Repeating _ ) ->
-            GT
-
-        -- If neither is end of session, then rank "more due" cards first.  Note that this isn't in the SM-2 algorithm and is just a QoL feature.  EQ case doesn't matter, since order becomes irrelevant then.
         ( Reviewed r1, Reviewed r2 ) ->
             if
                 daysOverdue time r1.lastReviewed (streakToInterval r1.streak)
@@ -492,6 +482,16 @@ compareDue time c1 c2 =
 
             else
                 LT
+
+        ( Repeating _, Repeating _ ) ->
+            EQ
+
+        ( Repeating _, _ ) ->
+            LT
+
+        -- If neither is end of session, then rank "more due" cards first.  Note that this isn't in the SM-2 algorithm and is just a QoL feature.  EQ case doesn't matter, since order becomes irrelevant then.
+        ( _, Repeating _ ) ->
+            GT
 
 
 {-| Given the current time, the time a card was last reviewed, and scheduled
@@ -516,14 +516,14 @@ getQueueDetails c =
         New ->
             NewCard
 
-        Repeating { streak } ->
-            RepeatingQueue { intervalInDays = Natural.toInt <| streakToInterval streak }
-
         Reviewed { lastReviewed, streak } ->
             ReviewQueue
                 { intervalInDays = Natural.toInt <| streakToInterval streak
                 , lastReviewed = lastReviewed
                 }
+
+        Repeating { streak } ->
+            RepeatingQueue { intervalInDays = Natural.toInt <| streakToInterval streak }
 
 
 {-| Check if a card is currently due to be studied.
@@ -534,8 +534,8 @@ isDue time { srsData } =
         New ->
             True
 
-        Repeating _ ->
-            True
-
         Reviewed { lastReviewed, streak } ->
             daysOverdue time lastReviewed (streakToInterval streak) >= 0
+
+        Repeating _ ->
+            True

@@ -91,14 +91,14 @@ suiteAnswerCard =
                                 ( Reviewed _, False ) ->
                                     -- This magic number (8/9) is just how the algorithm works out for adjusting difficulty.
                                     case compare (8 / 9) <| performanceRatingToFloat perf of
+                                        LT ->
+                                            boundedLessThan 0 oldDiff newDiff
+
                                         EQ ->
                                             Expect.within (Absolute 0.000000001) oldDiff newDiff
 
                                         GT ->
                                             boundedGreaterThan 1 oldDiff newDiff
-
-                                        LT ->
-                                            boundedLessThan 0 oldDiff newDiff
 
                                 _ ->
                                     Expect.within (Absolute 0.000000001) oldDiff newDiff
@@ -154,17 +154,17 @@ suiteAnswerCard =
                     , bothIncorrect
                     )
                 of
-                    ( GT, True ) ->
-                        Expect.atLeast firstInterval secondInterval
-
-                    ( GT, False ) ->
-                        Expect.atLeast secondInterval firstInterval
-
                     ( LT, True ) ->
                         Expect.atLeast secondInterval firstInterval
 
                     ( LT, False ) ->
                         Expect.atLeast firstInterval secondInterval
+
+                    ( GT, True ) ->
+                        Expect.atLeast firstInterval secondInterval
+
+                    ( GT, False ) ->
+                        Expect.atLeast secondInterval firstInterval
 
                     _ ->
                         Expect.within (Absolute 0.000000001) firstInterval secondInterval
@@ -184,14 +184,14 @@ suiteAnswerCard =
                             |> Maybe.withDefault -1
                 in
                 case compare (performanceRatingToFloat perf1) (performanceRatingToFloat perf2) of
+                    LT ->
+                        Expect.atLeast firstInterval secondInterval
+
                     EQ ->
                         Expect.within (Absolute 0.000000001) firstInterval secondInterval
 
                     GT ->
                         Expect.atLeast secondInterval firstInterval
-
-                    LT ->
-                        Expect.atLeast firstInterval secondInterval
         , fuzz3 fuzzTime fuzzCorrectPerformance fuzzDiffOverdueCards "Correct answers for a more overdue card should result in longer intervals (up to 2x) and vice versa." <|
             \time answer ( card1, card2 ) ->
                 let
@@ -230,6 +230,13 @@ suiteAnswerCard =
                             |> Maybe.withDefault -1
                 in
                 case ( compare overdueAmt1 overdueAmt2, compare firstDifficulty secondDifficulty ) of
+                    ( LT, LT ) ->
+                        -- This is a weird edge case produced by the algorithm, where at poor performance ratings, the increase in difficulty from a long-overdue answer outweighs the gain in interval length.
+                        Expect.pass
+
+                    ( LT, _ ) ->
+                        Expect.atLeast firstInterval secondInterval
+
                     ( EQ, _ ) ->
                         Expect.within (Absolute 0.000000001) firstInterval secondInterval
 
@@ -237,15 +244,8 @@ suiteAnswerCard =
                         -- This is a weird edge case produced by the algorithm, where at poor performance ratings, the increase in difficulty from a long-overdue answer outweighs the gain in interval length.
                         Expect.pass
 
-                    ( LT, LT ) ->
-                        -- This is a weird edge case produced by the algorithm, where at poor performance ratings, the increase in difficulty from a long-overdue answer outweighs the gain in interval length.
-                        Expect.pass
-
                     ( GT, _ ) ->
                         Expect.atLeast secondInterval firstInterval
-
-                    ( LT, _ ) ->
-                        Expect.atLeast firstInterval secondInterval
         , fuzz3 fuzzTime fuzzPerformance fuzzExtendedCard "Non-srs fields should never be changed by answering" <|
             \time perf card ->
                 answerCard Nothing time perf card

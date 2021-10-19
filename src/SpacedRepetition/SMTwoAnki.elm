@@ -390,14 +390,8 @@ newSRSData =
 encoderSRSData : SRSData -> Encode.Value
 encoderSRSData data =
     case data of
-        Lapsed { ease, oldInterval, lastReviewed, step, lapses } ->
-            Encode.object
-                [ ( "ease", encodeEase ease )
-                , ( "lapses", Natural.encode lapses )
-                , ( "lastReviewed", Time.encode lastReviewed )
-                , ( "oldInterval", encodeDayInterval oldInterval )
-                , ( "step", Natural.encode step )
-                ]
+        New ->
+            Encode.null
 
         Learning { lastReviewed, step } ->
             Encode.object
@@ -405,15 +399,21 @@ encoderSRSData data =
                 , ( "step", Natural.encode step )
                 ]
 
-        New ->
-            Encode.null
-
         Review { ease, interval, lastReviewed, lapses } ->
             Encode.object
                 [ ( "ease", encodeEase ease )
                 , ( "interval", encodeDayInterval interval )
                 , ( "lapses", Natural.encode lapses )
                 , ( "lastReviewed", Time.encode lastReviewed )
+                ]
+
+        Lapsed { ease, oldInterval, lastReviewed, step, lapses } ->
+            Encode.object
+                [ ( "ease", encodeEase ease )
+                , ( "lapses", Natural.encode lapses )
+                , ( "lastReviewed", Time.encode lastReviewed )
+                , ( "oldInterval", encodeDayInterval oldInterval )
+                , ( "step", Natural.encode step )
                 ]
 
 
@@ -579,6 +579,10 @@ scheduleCard settings time answer card =
         setStep : Natural -> SRSData
         setStep step =
             case card.srsData of
+                Review _ ->
+                    -- This should never happen and is here to fail the test suite.
+                    New
+
                 Lapsed ({ ease, oldInterval, lapses } as r) ->
                     if Natural.toInt step >= List.length settings.lapseSteps then
                         review ease
@@ -595,10 +599,6 @@ scheduleCard settings time answer card =
                                 , step = step
                             }
 
-                Review _ ->
-                    -- This should never happen and is here to fail the test suite.
-                    New
-
                 _ ->
                     if Natural.toInt step >= List.length settings.newSteps then
                         review
@@ -613,20 +613,11 @@ scheduleCard settings time answer card =
                             }
     in
     (case ( card.srsData, answer ) of
-        ( Lapsed { ease, oldInterval, lapses }, Easy ) ->
-            -- Instantly graduate back to review if answer is easy
-            review ease
-                lapses
-                (scaleIntervalWithMinimum settings.lapseNewInterval
-                    settings.lapseMinimumInterval
-                    oldInterval
-                )
-
-        ( Lapsed { step }, Good ) ->
-            setStep <| Natural.succ step
-
-        ( Lapsed _, _ ) ->
+        ( New, _ ) ->
             setStep Natural.nil
+
+        ( Learning { step }, Good ) ->
+            setStep <| Natural.succ step
 
         ( Learning _, Easy ) ->
             -- Instantly graduate to review if answer is easy
@@ -634,13 +625,7 @@ scheduleCard settings time answer card =
                 Natural.nil
                 settings.easyInterval
 
-        ( Learning { step }, Good ) ->
-            setStep <| Natural.succ step
-
         ( Learning _, _ ) ->
-            setStep Natural.nil
-
-        ( New, _ ) ->
             setStep Natural.nil
 
         ( Review { ease, interval, lapses }, Again ) ->
@@ -652,10 +637,12 @@ scheduleCard settings time answer card =
                 , lapses = Natural.succ lapses
                 }
 
-        ( Review { ease, lapses }, Easy ) ->
+        ( Review { ease, lapses }, Hard ) ->
             review ease
                 lapses
-                (scaleReviewInterval (easeToFloat ease * max 1 settings.easyBonus) effInterval
+                (scaleReviewInterval
+                    (min (easeToFloat ease) settings.hardInterval)
+                    effInterval
                     |> fuzzInterval time
                 )
 
@@ -666,14 +653,27 @@ scheduleCard settings time answer card =
                     |> fuzzInterval time
                 )
 
-        ( Review { ease, lapses }, Hard ) ->
+        ( Review { ease, lapses }, Easy ) ->
             review ease
                 lapses
-                (scaleReviewInterval
-                    (min (easeToFloat ease) settings.hardInterval)
-                    effInterval
+                (scaleReviewInterval (easeToFloat ease * max 1 settings.easyBonus) effInterval
                     |> fuzzInterval time
                 )
+
+        ( Lapsed { step }, Good ) ->
+            setStep <| Natural.succ step
+
+        ( Lapsed { ease, oldInterval, lapses }, Easy ) ->
+            -- Instantly graduate back to review if answer is easy
+            review ease
+                lapses
+                (scaleIntervalWithMinimum settings.lapseNewInterval
+                    settings.lapseMinimumInterval
+                    oldInterval
+                )
+
+        ( Lapsed _, _ ) ->
+            setStep Natural.nil
     )
         |> (\newStatus ->
                 { card | srsData = newStatus }
@@ -696,11 +696,8 @@ effectiveInterval settings answer time card =
         Again ->
             0
 
-        Easy ->
-            overdueAmount settings time card
-                |> Tuple.second
-                |> (+) interval
-                |> max interval
+        Hard ->
+            interval
 
         Good ->
             overdueAmount settings time card
@@ -709,8 +706,11 @@ effectiveInterval settings answer time card =
                 |> (+) interval
                 |> max interval
 
-        Hard ->
-            interval
+        Easy ->
+            overdueAmount settings time card
+                |> Tuple.second
+                |> (+) interval
+                |> max interval
     )
         |> timeIntervalFromMinutes
 
@@ -748,6 +748,9 @@ fuzzedIntervalGenerator interval =
         ( minInterval, maxInterval ) =
             -- These are the fuzz amounts per Anki's source
             case compare i 2 of
+                LT ->
+                    ( 1, 1 )
+
                 EQ ->
                     ( 2, 3 )
 
@@ -765,9 +768,6 @@ fuzzedIntervalGenerator interval =
                                 round << max 4 <| toFloat i * 0.05
                     in
                     ( i - fuzz, i + fuzz )
-
-                LT ->
-                    ( 1, 1 )
 
         i : Int
         i =
@@ -804,14 +804,14 @@ updateEase answer card =
                         Again ->
                             adjustEase -0.2
 
-                        Easy ->
-                            adjustEase 0.15
+                        Hard ->
+                            adjustEase -0.15
 
                         Good ->
                             identity
 
-                        Hard ->
-                            adjustEase -0.15
+                        Easy ->
+                            adjustEase 0.15
             in
             { card | srsData = Review { r | ease = adjEase r.ease } }
 
@@ -1038,11 +1038,8 @@ compareDue settings time c1 c2 =
 getCurrentIntervalInMinutes : AnkiSettings -> Card a -> Int
 getCurrentIntervalInMinutes settings { srsData } =
     case srsData of
-        Lapsed { step } ->
-            ListX.getAt (Natural.toInt step) settings.lapseSteps
-                |> Maybe.map timeIntervalToMinutes
-                -- If there are no steps, the card should immediately be due.
-                |> Maybe.withDefault 1
+        New ->
+            0
 
         Learning { step } ->
             ListX.getAt (Natural.toInt step) settings.newSteps
@@ -1050,11 +1047,14 @@ getCurrentIntervalInMinutes settings { srsData } =
                 -- If there are no steps, the card should immediately be due.
                 |> Maybe.withDefault 1
 
-        New ->
-            0
-
         Review { interval } ->
             timeIntervalToMinutes interval
+
+        Lapsed { step } ->
+            ListX.getAt (Natural.toInt step) settings.lapseSteps
+                |> Maybe.map timeIntervalToMinutes
+                -- If there are no steps, the card should immediately be due.
+                |> Maybe.withDefault 1
 
 
 {-| Given a card, return its review status.
@@ -1062,13 +1062,8 @@ getCurrentIntervalInMinutes settings { srsData } =
 getQueueDetails : AnkiSettings -> Card a -> QueueDetails
 getQueueDetails s c =
     case c.srsData of
-        Lapsed { oldInterval, lastReviewed, lapses } ->
-            LapsedQueue
-                { lastReviewed = lastReviewed
-                , formerIntervalInDays = timeIntervalToDays oldInterval
-                , intervalInMinutes = getCurrentIntervalInMinutes s c
-                , lapses = Natural.toInt lapses
-                }
+        New ->
+            NewCard
 
         Learning { lastReviewed } ->
             LearningQueue
@@ -1076,13 +1071,18 @@ getQueueDetails s c =
                 , intervalInMinutes = getCurrentIntervalInMinutes s c
                 }
 
-        New ->
-            NewCard
-
         Review { interval, lastReviewed, lapses } ->
             ReviewQueue
                 { lastReviewed = lastReviewed
                 , intervalInDays = timeIntervalToDays interval
+                , lapses = Natural.toInt lapses
+                }
+
+        Lapsed { oldInterval, lastReviewed, lapses } ->
+            LapsedQueue
+                { lastReviewed = lastReviewed
+                , formerIntervalInDays = timeIntervalToDays oldInterval
+                , intervalInMinutes = getCurrentIntervalInMinutes s c
                 , lapses = Natural.toInt lapses
                 }
 
@@ -1119,10 +1119,10 @@ isLeech settings card =
 numberOfLapses : Card a -> Int
 numberOfLapses card =
     case card.srsData of
-        Lapsed { lapses } ->
+        Review { lapses } ->
             Natural.toInt lapses
 
-        Review { lapses } ->
+        Lapsed { lapses } ->
             Natural.toInt lapses
 
         _ ->
@@ -1151,16 +1151,16 @@ overdueAmount settings time card =
                 reviewed : Time.Posix
                 reviewed =
                     case card.srsData of
-                        Lapsed { lastReviewed } ->
-                            lastReviewed
+                        New ->
+                            Time.millisToPosix 0
 
                         Learning { lastReviewed } ->
                             lastReviewed
 
-                        New ->
-                            Time.millisToPosix 0
-
                         Review { lastReviewed } ->
+                            lastReviewed
+
+                        Lapsed { lastReviewed } ->
                             lastReviewed
             in
             -- (Relative Amount Overdue, Absolute Minutes Overdue)

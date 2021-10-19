@@ -63,11 +63,11 @@ decodeStreak =
             |> Decode.andThen
                 (\string ->
                     case string of
-                        "Z" ->
-                            Decode.succeed Zero
-
                         "O" ->
                             Decode.succeed One
+
+                        "Z" ->
+                            Decode.succeed Zero
 
                         _ ->
                             Decode.fail "Invalid Streak"
@@ -109,14 +109,14 @@ encodeEFactor eF =
 encodeStreak : Streak -> Encode.Value
 encodeStreak streak =
     case streak of
+        Zero ->
+            Encode.string "Z"
+
         One ->
             Encode.string "O"
 
         TwoPlus { interval } ->
             Natural.encode interval
-
-        Zero ->
-            Encode.string "Z"
 
 
 {-| Given how many times a card has been correctly answered in a row, determine the interval between reviews.
@@ -124,13 +124,13 @@ encodeStreak streak =
 streakToInterval : Streak -> Natural
 streakToInterval streak =
     (case streak of
+        Zero ->
+            Natural.fromInt 1
+
         One ->
             Natural.fromInt 6
 
         TwoPlus { interval } ->
             Just interval
-
-        Zero ->
-            Natural.fromInt 1
     )
         |> Maybe.withDefault Natural.nil

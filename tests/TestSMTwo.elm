@@ -112,25 +112,25 @@ suiteAnswerCard =
                                         |> Maybe.withDefault Zero
                             in
                             case answer of
-                                CorrectWithDifficulty ->
-                                    Expect.equal (Just oldStreak) newStreak
+                                Perfect ->
+                                    Maybe.withDefault Zero newStreak
+                                        |> expectLonger oldStreak
 
                                 CorrectWithHesitation ->
                                     Maybe.withDefault Zero newStreak
                                         |> expectLonger oldStreak
 
-                                IncorrectButFamiliar ->
-                                    Expect.equal (Just Zero) newStreak
+                                CorrectWithDifficulty ->
+                                    Expect.equal (Just oldStreak) newStreak
 
                                 IncorrectButRemembered ->
                                     Expect.equal (Just Zero) newStreak
 
-                                NoRecollection ->
+                                IncorrectButFamiliar ->
                                     Expect.equal (Just Zero) newStreak
 
-                                Perfect ->
-                                    Maybe.withDefault Zero newStreak
-                                        |> expectLonger oldStreak
+                                NoRecollection ->
+                                    Expect.equal (Just Zero) newStreak
                        )
         , fuzz3 fuzzTime fuzzAnswer fuzzCard "Card should be repeated if necessary" <|
             \time answer card ->
@@ -138,10 +138,10 @@ suiteAnswerCard =
                     |> (\c ->
                             Expect.true "Card should be repeated if necessary" <|
                                 case answer of
-                                    CorrectWithHesitation ->
+                                    Perfect ->
                                         isReviewed c
 
-                                    Perfect ->
+                                    CorrectWithHesitation ->
                                         isReviewed c
 
                                     _ ->
@@ -167,14 +167,14 @@ suiteAnswerCard =
                             |> Natural.toInt
                 in
                 case compare (answerToInt answer1) (answerToInt answer2) of
+                    LT ->
+                        Expect.atLeast firstInterval secondInterval
+
                     EQ ->
                         Expect.equal firstInterval secondInterval
 
                     GT ->
                         Expect.atLeast secondInterval firstInterval
-
-                    LT ->
-                        Expect.atLeast firstInterval secondInterval
         , fuzz3 fuzzTime fuzzAnswer fuzzExtendedCard "Non-srs fields should never be changed by answering" <|
             \time answer card ->
                 answerCard time answer card
@@ -188,23 +188,23 @@ suiteAnswerCard =
 answerToInt : Answer -> Int
 answerToInt ans =
     case ans of
-        CorrectWithDifficulty ->
-            3
+        Perfect ->
+            5
 
         CorrectWithHesitation ->
             4
 
-        IncorrectButFamiliar ->
-            1
+        CorrectWithDifficulty ->
+            3
 
         IncorrectButRemembered ->
             2
 
+        IncorrectButFamiliar ->
+            1
+
         NoRecollection ->
             0
-
-        Perfect ->
-            5
 
 
 {-| Get the ease of a card.
@@ -215,10 +215,10 @@ eFactorFromCard c =
         New ->
             2.5
 
-        Repeating { ease } ->
+        Reviewed { ease } ->
             eFactorToFloat ease
 
-        Reviewed { ease } ->
+        Repeating { ease } ->
             eFactorToFloat ease
 
 
@@ -239,11 +239,11 @@ expectLonger oldStreak newStreak =
         ( One, One ) ->
             Expect.fail "Answered card interval was not incremented."
 
-        ( TwoPlus _, One ) ->
-            Expect.fail "Answered card was decremented instead of incremented."
-
         ( One, TwoPlus _ ) ->
             Expect.pass
+
+        ( TwoPlus _, One ) ->
+            Expect.fail "Answered card was decremented instead of incremented."
 
         ( TwoPlus old, TwoPlus new ) ->
             Expect.greaterThan (Natural.toInt old.interval)
@@ -277,10 +277,10 @@ streakFromCard c =
         New ->
             Nothing
 
-        Repeating { streak } ->
+        Reviewed { streak } ->
             Just streak
 
-        Reviewed { streak } ->
+        Repeating { streak } ->
             Just streak
 
 
@@ -427,6 +427,13 @@ suiteGetDueCardIndices =
                             ( _, New ) ->
                                 good
 
+                            ( Reviewed r1, Reviewed r2 ) ->
+                                if overdueAmount (streakToInterval r1.streak) r1.lastReviewed >= overdueAmount (streakToInterval r2.streak) r2.lastReviewed then
+                                    good
+
+                                else
+                                    bad
+
                             ( Repeating _, Repeating _ ) ->
                                 good
 
@@ -435,13 +442,6 @@ suiteGetDueCardIndices =
 
                             ( _, Repeating _ ) ->
                                 good
-
-                            ( Reviewed r1, Reviewed r2 ) ->
-                                if overdueAmount (streakToInterval r1.streak) r1.lastReviewed >= overdueAmount (streakToInterval r2.streak) r2.lastReviewed then
-                                    good
-
-                                else
-                                    bad
 
                     overdueAmount : Natural -> Time.Posix -> Float
                     overdueAmount interval reviewed =
@@ -480,14 +480,14 @@ suiteGetDueCardIndicesWithDetails =
                             New ->
                                 NewCard
 
-                            Repeating { streak } ->
-                                RepeatingQueue { intervalInDays = Natural.toInt <| streakToInterval streak }
-
                             Reviewed { lastReviewed, streak } ->
                                 ReviewQueue
                                     { intervalInDays = Natural.toInt <| streakToInterval streak
                                     , lastReviewed = lastReviewed
                                     }
+
+                            Repeating { streak } ->
+                                RepeatingQueue { intervalInDays = Natural.toInt <| streakToInterval streak }
                 in
                 getDueCardIndicesWithDetails time deck
                     |> List.filterMap

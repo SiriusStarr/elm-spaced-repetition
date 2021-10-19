@@ -399,22 +399,22 @@ compareDue : Time.Posix -> Card a -> Card a -> Order
 compareDue time c1 c2 =
     case ( percentOverdue time c1, percentOverdue time c2 ) of
         -- New cards go last
-        ( Nothing, Nothing ) ->
-            EQ
-
-        ( Nothing, _ ) ->
-            LT
-
-        ( _, Nothing ) ->
-            GT
-
-        -- If neither is new, then rank "more due" cards first (by percent due).  EQ case doesn't matter, since order becomes irrelevant then.
         ( Just percent1, Just percent2 ) ->
             if percent1 >= percent2 then
                 GT
 
             else
                 LT
+
+        ( Nothing, Nothing ) ->
+            EQ
+
+        ( Nothing, _ ) ->
+            LT
+
+        -- If neither is new, then rank "more due" cards first (by percent due).  EQ case doesn't matter, since order becomes irrelevant then.
+        ( _, Nothing ) ->
+            GT
 
 
 {-| Given a card, return its review status.

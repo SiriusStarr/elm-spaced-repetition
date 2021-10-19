@@ -585,9 +585,9 @@ fuzzDiffOverdueCards =
 
 {-| Fuzz a card with an extra field.
 -}
-fuzzExtendedCard : Fuzzer { srsData : SRSData, unrelatedField : Int }
+fuzzExtendedCard : Fuzzer { unrelatedField : Int, srsData : SRSData }
 fuzzExtendedCard =
-    Fuzz.map2 (\d i -> { srsData = d, unrelatedField = i }) fuzzSRSData int
+    Fuzz.map2 (\d i -> { unrelatedField = i, srsData = d }) fuzzSRSData int
 
 
 {-| Get the review interval from a card as a number of minutes, only for cards
@@ -775,24 +775,24 @@ suiteGetDueWithDetails =
                     checkQueue : { srsData : SRSData } -> QueueDetails
                     checkQueue c =
                         case c.srsData of
-                            Lapsed { step, oldInterval, lastReviewed, lapses } ->
+                            Lapsed { oldInterval, lastReviewed, step, lapses } ->
                                 LapsedQueue
-                                    { formerIntervalInDays = timeIntervalToDays oldInterval
+                                    { lastReviewed = lastReviewed
+                                    , formerIntervalInDays = timeIntervalToDays oldInterval
                                     , intervalInMinutes =
                                         ListX.getAt (Natural.toInt step) deck.settings.lapseSteps
                                             |> Maybe.map timeIntervalToMinutes
                                             |> Maybe.withDefault 1
                                     , lapses = Natural.toInt lapses
-                                    , lastReviewed = lastReviewed
                                     }
 
-                            Learning { step, lastReviewed } ->
+                            Learning { lastReviewed, step } ->
                                 LearningQueue
-                                    { intervalInMinutes =
+                                    { lastReviewed = lastReviewed
+                                    , intervalInMinutes =
                                         ListX.getAt (Natural.toInt step) deck.settings.newSteps
                                             |> Maybe.map timeIntervalToMinutes
                                             |> Maybe.withDefault 1
-                                    , lastReviewed = lastReviewed
                                     }
 
                             New ->
@@ -800,9 +800,9 @@ suiteGetDueWithDetails =
 
                             Review { interval, lastReviewed, lapses } ->
                                 ReviewQueue
-                                    { intervalInDays = timeIntervalToDays interval
+                                    { lastReviewed = lastReviewed
+                                    , intervalInDays = timeIntervalToDays interval
                                     , lapses = Natural.toInt lapses
-                                    , lastReviewed = lastReviewed
                                     }
                 in
                 getDueCardIndicesWithDetails time deck
@@ -1069,18 +1069,18 @@ fuzzSettings : Fuzzer AnkiSettings
 fuzzSettings =
     Fuzz.map
         (\newSteps graduatingInterval easyInterval startingEase easyBonus intervalModifier maximumInterval hardInterval lapseSteps lapseNewInterval lapseMinimumInterval leechThreshold ->
-            { easyBonus = easyBonus
-            , easyInterval = easyInterval
+            { newSteps = newSteps
             , graduatingInterval = graduatingInterval
-            , hardInterval = hardInterval
-            , intervalModifier = intervalModifier
-            , lapseMinimumInterval = lapseMinimumInterval
-            , lapseNewInterval = lapseNewInterval
-            , lapseSteps = lapseSteps
-            , leechThreshold = leechThreshold
-            , maximumInterval = maximumInterval
-            , newSteps = newSteps
+            , easyInterval = easyInterval
             , startingEase = startingEase
+            , easyBonus = easyBonus
+            , intervalModifier = intervalModifier
+            , maximumInterval = maximumInterval
+            , hardInterval = hardInterval
+            , lapseSteps = lapseSteps
+            , lapseNewInterval = lapseNewInterval
+            , lapseMinimumInterval = lapseMinimumInterval
+            , leechThreshold = leechThreshold
             }
         )
         (Fuzz.list fuzzMinuteInterval)

@@ -294,7 +294,7 @@ answerCardInDeck time answer index deck =
 {-| When a card is presented to the user and answered, `answerCard` should be called with the current time (in the `Time.Posix` format returned by the `now` task of the core `Time` module), an `Answer`, and `LeitnerSettings`. It returns the updated card, which should replace the card in the `Deck`. Use this function if you want to handle updating the `Deck` manually; otherwise, use `answerCardInDeck`, which is much more convenient. Handling the presentation of a card is the responsibility of the implementing program, as various behaviors might be desirable in different cases.
 -}
 answerCard : Time.Posix -> Answer -> LeitnerSettings -> Card a -> Card a
-answerCard time answer { numBoxes, onIncorrect } card =
+answerCard time answer { onIncorrect, numBoxes } card =
     let
         currentBox : Natural
         currentBox =

@@ -168,9 +168,9 @@ suiteAnswerCard =
 
 {-| Fuzz a `SRSData` for a card with other fields.
 -}
-fuzzExtendedCard : Fuzzer { srsData : SRSData, unrelatedField : Int }
+fuzzExtendedCard : Fuzzer { unrelatedField : Int, srsData : SRSData }
 fuzzExtendedCard =
-    Fuzz.map2 (\d i -> { srsData = d, unrelatedField = i }) fuzzSRSData int
+    Fuzz.map2 (\d i -> { unrelatedField = i, srsData = d }) fuzzSRSData int
 
 
 {-| Fuzz a full user response, with settings, time, and answer.
@@ -468,9 +468,9 @@ fuzzSettings : Fuzzer LeitnerSettings
 fuzzSettings =
     Fuzz.map3
         (\boxSpacing numBoxes onIncorrect ->
-            { boxSpacing = boxSpacing
+            { onIncorrect = onIncorrect
+            , boxSpacing = boxSpacing
             , numBoxes = numBoxes
-            , onIncorrect = onIncorrect
             }
         )
         fuzzSpacing

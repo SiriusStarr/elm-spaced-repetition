@@ -247,21 +247,21 @@ An example follows:
 createSettings : AnkiSettings
 createSettings =
     -- Anki defaults
-    { easyBonus = 1.3
-    , easyInterval = timeIntervalFromDays 4
-    , graduatingInterval = timeIntervalFromDays 1
-    , hardInterval = 1.2
-    , intervalModifier = 1
-    , lapseMinimumInterval = timeIntervalFromDays 1
-    , lapseNewInterval = 0
-    , lapseSteps = [ timeIntervalFromMinutes 10 ]
-    , leechThreshold = Natural.eight
-    , maximumInterval = timeIntervalFromDays 36500
-    , newSteps =
+    { newSteps =
         [ timeIntervalFromMinutes 1
         , timeIntervalFromMinutes 10
         ]
+    , graduatingInterval = timeIntervalFromDays 1
+    , easyInterval = timeIntervalFromDays 4
     , startingEase = createEase 2.5
+    , easyBonus = 1.3
+    , intervalModifier = 1
+    , maximumInterval = timeIntervalFromDays 36500
+    , hardInterval = 1.2
+    , lapseSteps = [ timeIntervalFromMinutes 10 ]
+    , lapseNewInterval = 0
+    , lapseMinimumInterval = timeIntervalFromDays 1
+    , leechThreshold = Natural.eight
     }
 
 
@@ -390,7 +390,7 @@ newSRSData =
 encoderSRSData : SRSData -> Encode.Value
 encoderSRSData data =
     case data of
-        Lapsed { ease, lapses, lastReviewed, oldInterval, step } ->
+        Lapsed { ease, oldInterval, lastReviewed, step, lapses } ->
             Encode.object
                 [ ( "ease", encodeEase ease )
                 , ( "lapses", Natural.encode lapses )
@@ -408,7 +408,7 @@ encoderSRSData data =
         New ->
             Encode.null
 
-        Review { ease, interval, lapses, lastReviewed } ->
+        Review { ease, interval, lastReviewed, lapses } ->
             Encode.object
                 [ ( "ease", encodeEase ease )
                 , ( "interval", encodeDayInterval interval )
@@ -427,10 +427,10 @@ decoderSRSData =
             (\ease lapses lastReviewed oldInterval step ->
                 Lapsed
                     { ease = ease
-                    , lapses = lapses
-                    , lastReviewed = lastReviewed
                     , oldInterval = oldInterval
+                    , lastReviewed = lastReviewed
                     , step = step
+                    , lapses = lapses
                     }
             )
             (Decode.field "ease" decodeEase)
@@ -452,8 +452,8 @@ decoderSRSData =
                 Review
                     { ease = ease
                     , interval = interval
-                    , lapses = lapses
                     , lastReviewed = lastReviewed
+                    , lapses = lapses
                     }
             )
             (Decode.field "ease" decodeEase)
@@ -567,8 +567,8 @@ scheduleCard settings time answer card =
             Review
                 { ease = ease
                 , interval = minInterval settings.maximumInterval interval
-                , lapses = lapses
                 , lastReviewed = time
+                , lapses = lapses
                 }
 
         scaleReviewInterval : Float -> TimeInterval Minutes -> TimeInterval Days
@@ -579,7 +579,7 @@ scheduleCard settings time answer card =
         setStep : Natural -> SRSData
         setStep step =
             case card.srsData of
-                Lapsed ({ ease, lapses, oldInterval } as r) ->
+                Lapsed ({ ease, oldInterval, lapses } as r) ->
                     if Natural.toInt step >= List.length settings.lapseSteps then
                         review ease
                             lapses
@@ -613,7 +613,7 @@ scheduleCard settings time answer card =
                             }
     in
     (case ( card.srsData, answer ) of
-        ( Lapsed { ease, lapses, oldInterval }, Easy ) ->
+        ( Lapsed { ease, oldInterval, lapses }, Easy ) ->
             -- Instantly graduate back to review if answer is easy
             review ease
                 lapses
@@ -643,13 +643,13 @@ scheduleCard settings time answer card =
         ( New, _ ) ->
             setStep Natural.nil
 
-        ( Review { ease, lapses, interval }, Again ) ->
+        ( Review { ease, interval, lapses }, Again ) ->
             Lapsed
                 { ease = ease
-                , lapses = Natural.succ lapses
-                , lastReviewed = time
                 , oldInterval = interval
+                , lastReviewed = time
                 , step = Natural.nil
+                , lapses = Natural.succ lapses
                 }
 
         ( Review { ease, lapses }, Easy ) ->
@@ -1062,28 +1062,28 @@ getCurrentIntervalInMinutes settings { srsData } =
 getQueueDetails : AnkiSettings -> Card a -> QueueDetails
 getQueueDetails s c =
     case c.srsData of
-        Lapsed { lapses, lastReviewed, oldInterval } ->
+        Lapsed { oldInterval, lastReviewed, lapses } ->
             LapsedQueue
-                { formerIntervalInDays = timeIntervalToDays oldInterval
+                { lastReviewed = lastReviewed
+                , formerIntervalInDays = timeIntervalToDays oldInterval
                 , intervalInMinutes = getCurrentIntervalInMinutes s c
                 , lapses = Natural.toInt lapses
-                , lastReviewed = lastReviewed
                 }
 
         Learning { lastReviewed } ->
             LearningQueue
-                { intervalInMinutes = getCurrentIntervalInMinutes s c
-                , lastReviewed = lastReviewed
+                { lastReviewed = lastReviewed
+                , intervalInMinutes = getCurrentIntervalInMinutes s c
                 }
 
         New ->
             NewCard
 
-        Review { interval, lapses, lastReviewed } ->
+        Review { interval, lastReviewed, lapses } ->
             ReviewQueue
-                { intervalInDays = timeIntervalToDays interval
+                { lastReviewed = lastReviewed
+                , intervalInDays = timeIntervalToDays interval
                 , lapses = Natural.toInt lapses
-                , lastReviewed = lastReviewed
                 }
 
 

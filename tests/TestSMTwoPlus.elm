@@ -329,9 +329,9 @@ fuzzDiffOverdueCards =
 
 {-| Fuzz a card with non-SRS fields.
 -}
-fuzzExtendedCard : Fuzzer { srsData : SRSData, unrelatedField : Int }
+fuzzExtendedCard : Fuzzer { unrelatedField : Int, srsData : SRSData }
 fuzzExtendedCard =
-    Fuzz.map2 (\d i -> { srsData = d, unrelatedField = i }) fuzzSRSData int
+    Fuzz.map2 (\d i -> { unrelatedField = i, srsData = d }) fuzzSRSData int
 
 
 {-| Test `answerCardInDeck`.

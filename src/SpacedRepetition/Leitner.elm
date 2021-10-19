@@ -362,21 +362,6 @@ getDueCardIndices time deck =
         |> ListX.reverseMap Tuple.first
 
 
-{-| `QueueDetails` represents the current status of a card.
-
-  - `NewCard` -- A card that has never before been studied (encountered) by the user.
-  - `InBox {...}` -- A card that is being reviewed for retention.
-      - `lastReviewed : Time.Posix` -- The date and time the card was last reviewed.
-      - `boxNumber : Int` -- The "box" that the card is currently in (starting from `0`).
-  - `GraduatedCard` -- A card that has been successfully graduated and thus is no longer being studied.
-
--}
-type QueueDetails
-    = NewCard
-    | InBox { boxNumber : Int, lastReviewed : Time.Posix }
-    | GraduatedCard
-
-
 {-| `getDueCardIndicesWithDetails` takes settings (`LeitnerSettings`), the current time (in the `Time.Posix` format returned by the `now` task of the core `Time` module) and a `Deck` and returns the subset of the `Deck` that is due for review (as a list of records), providing their index and which queue they are currently in, with any relevant queue details. The returned indices will be sorted in the following order:
 
 1.  Cards overdue for review
@@ -403,6 +388,21 @@ getDueCardIndicesWithDetails time deck =
             )
 
 
+{-| `QueueDetails` represents the current status of a card.
+
+  - `NewCard` -- A card that has never before been studied (encountered) by the user.
+  - `InBox {...}` -- A card that is being reviewed for retention.
+      - `lastReviewed : Time.Posix` -- The date and time the card was last reviewed.
+      - `boxNumber : Int` -- The "box" that the card is currently in (starting from `0`).
+  - `GraduatedCard` -- A card that has been successfully graduated and thus is no longer being studied.
+
+-}
+type QueueDetails
+    = NewCard
+    | InBox { boxNumber : Int, lastReviewed : Time.Posix }
+    | GraduatedCard
+
+
 {-| `getCardDetails` returns the current queue status for a given card. If you require this for every due card, simply use `getDueCardIndicesWithDetails`.
 -}
 getCardDetails : Card a -> { queueDetails : QueueDetails }
@@ -412,24 +412,6 @@ getCardDetails c =
 
 
 -- * Non-exposed only below here
-
-
-{-| Given a card, return its current box status.
--}
-getQueueDetails : Card a -> QueueDetails
-getQueueDetails c =
-    case c.srsData of
-        BoxN { box, lastReviewed } ->
-            InBox
-                { boxNumber = Natural.toInt box
-                , lastReviewed = lastReviewed
-                }
-
-        Graduated ->
-            GraduatedCard
-
-        New ->
-            NewCard
 
 
 {-| Compare the "due"-ness of two cards at a given time.
@@ -466,6 +448,24 @@ compareDue settings time c1 c2 =
 
             else
                 LT
+
+
+{-| Given a card, return its current box status.
+-}
+getQueueDetails : Card a -> QueueDetails
+getQueueDetails c =
+    case c.srsData of
+        BoxN { box, lastReviewed } ->
+            InBox
+                { boxNumber = Natural.toInt box
+                , lastReviewed = lastReviewed
+                }
+
+        Graduated ->
+            GraduatedCard
+
+        New ->
+            NewCard
 
 
 {-| Check if a card is currently due to be studied.

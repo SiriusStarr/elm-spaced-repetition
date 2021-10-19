@@ -17,18 +17,18 @@ type Box
     | Graduated
 
 
-{-| Get the index of the highest box in the system, given the `NumberOfBoxes`.
--}
-highestBoxIndex : NumberOfBoxes -> Natural
-highestBoxIndex (HighestBoxIndex n) =
-    n
-
-
 {-| The maximum number of boxes in the Leitner system, beyond which cards will
 be graduated, as created by `numberOfBoxes`.
 -}
 type NumberOfBoxes
     = HighestBoxIndex Natural
+
+
+{-| Get the index of the highest box in the system, given the `NumberOfBoxes`.
+-}
+highestBoxIndex : NumberOfBoxes -> Natural
+highestBoxIndex (HighestBoxIndex n) =
+    n
 
 
 {-| `numberOfBoxes` may be used to specify the total number of boxes before a

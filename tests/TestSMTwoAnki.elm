@@ -61,390 +61,180 @@ import Time.Extra exposing (Interval(..), diff)
 import Util exposing (boundedLessThan, fuzzNatural, fuzzTime)
 
 
-{-| Fuzz an `Ease`.
+{-| Tests for updating cards in certain queues to the next.
 -}
-fuzzEase : Fuzzer Ease
-fuzzEase =
-    Fuzz.map createEase (floatRange 0 1000)
+cardSchedulingTests : Test
+cardSchedulingTests =
+    describe "Card Scheduling"
+        [ fuzz fuzzResponse "New cards should be handled appropriately" <|
+            \( time, answer, settings ) ->
+                answerCard time answer settings { srsData = New }
+                    |> (\{ srsData } ->
+                            case srsData of
+                                Learning { step } ->
+                                    Expect.all
+                                        [ \() -> Expect.false "Starting steps" <| List.isEmpty settings.newSteps
+                                        , \() -> Expect.equal step Natural.nil
+                                        ]
+                                        ()
 
+                                Review r ->
+                                    Expect.all
+                                        [ \_ -> Expect.true "No starting steps" <| List.isEmpty settings.newSteps
+                                        , \{ ease } -> Expect.within (Absolute 1.0e-9) (easeToFloat settings.startingEase) <| easeToFloat ease
+                                        , \{ interval } -> Expect.equal (boundedDayInterval settings settings.graduatingInterval) interval
+                                        , \{ lapses } -> Expect.equal Natural.nil lapses
+                                        ]
+                                        r
 
-{-| Fuzz an interval in minutes.
--}
-fuzzMinuteInterval : Fuzzer (TimeInterval Minutes)
-fuzzMinuteInterval =
-    Fuzz.map timeIntervalFromMinutes <| intRange 0 52560000
+                                _ ->
+                                    Expect.fail "Card should not go from New to anything but first Learning step or instant graduation with no steps"
+                       )
+        , fuzz2 fuzzResponse fuzzLearning "Learning cards should be handled appropriately" <|
+            \( time, answer, settings ) old ->
+                answerCard time answer settings { srsData = Learning old }
+                    |> (\{ srsData } ->
+                            let
+                                normalGraduation : ReviewData -> Expectation
+                                normalGraduation =
+                                    Expect.all
+                                        [ \_ -> Expect.atLeast (List.length settings.newSteps) <| Natural.toInt (Natural.succ old.step)
+                                        , \{ ease } -> Expect.within (Absolute 0.000000001) (easeToFloat settings.startingEase) <| easeToFloat ease
+                                        , \{ interval } -> Expect.equal (boundedDayInterval settings settings.graduatingInterval) interval
+                                        , \{ lapses } -> Expect.equal Natural.nil lapses
+                                        ]
+                            in
+                            case ( srsData, answer ) of
+                                ( Learning _, Easy ) ->
+                                    Expect.fail "Card should have graduated"
 
+                                ( Learning new, Good ) ->
+                                    Expect.all
+                                        [ \() ->
+                                            Expect.false "Do not advance past learning steps" <| Natural.toInt (Natural.succ old.step) >= List.length settings.newSteps
+                                        , \() -> Expect.equal (Natural.succ old.step) new.step
+                                        ]
+                                        ()
 
-{-| Fuzz an interval in days.
--}
-fuzzDayInterval : Fuzzer (TimeInterval Days)
-fuzzDayInterval =
-    Fuzz.map timeIntervalFromDays <| intRange 0 36500
+                                ( Learning new, _ ) ->
+                                    -- Return to start
+                                    Expect.all
+                                        [ \_ -> Expect.false "Only return to start if there are new steps" <| List.isEmpty settings.newSteps
+                                        , Expect.equal Natural.nil
+                                        ]
+                                        new.step
 
+                                ( Review new, Easy ) ->
+                                    -- Easy graduation
+                                    Expect.all
+                                        [ \{ ease } -> Expect.within (Absolute 0.000000001) (easeToFloat settings.startingEase) <| easeToFloat ease
+                                        , \{ interval } -> Expect.equal (boundedDayInterval settings settings.easyInterval) interval
+                                        , \{ lapses } -> Expect.equal Natural.nil lapses
+                                        ]
+                                        new
 
-{-| Fuzz a review history for a card.
--}
-fuzzSRSData : Fuzzer SRSData
-fuzzSRSData =
-    Fuzz.oneOf
-        [ Fuzz.constant New
-        , Fuzz.map Learning fuzzLearning
-        , Fuzz.map Review fuzzReview
-        , Fuzz.map Lapsed fuzzLapsed
+                                ( Review new, Good ) ->
+                                    normalGraduation new
+
+                                ( Review new, _ ) ->
+                                    Expect.all
+                                        [ \_ -> Expect.true "Instantly graduate with no new steps" <| List.isEmpty settings.newSteps
+                                        , normalGraduation
+                                        ]
+                                        new
+
+                                _ ->
+                                    Expect.fail "Card cannot be New or Lapsed after answering"
+                       )
+        , fuzz2 fuzzResponse fuzzLapsed "Lapsed cards should be handled appropriately" <|
+            \( time, answer, settings ) old ->
+                answerCard time answer settings { srsData = Lapsed old }
+                    |> (\{ srsData } ->
+                            let
+                                graduation : ReviewData -> Expectation
+                                graduation =
+                                    Expect.all
+                                        [ \{ ease } -> Expect.equal old.ease ease
+                                        , \{ interval } -> Expect.equal (boundedDayInterval settings (minutesToDayInterval <| max (timeIntervalToMinutes settings.lapseMinimumInterval) (truncate <| min 2147483647 (settings.lapseNewInterval * toFloat (timeIntervalToMinutes old.oldInterval))))) interval
+                                        , \{ lapses } -> Expect.equal old.lapses lapses
+                                        ]
+                            in
+                            case ( srsData, answer ) of
+                                ( Lapsed _, Easy ) ->
+                                    Expect.fail "Card should have graduated"
+
+                                ( Lapsed new, Good ) ->
+                                    Expect.all
+                                        [ \_ -> Expect.lessThan (List.length settings.lapseSteps) <| Natural.toInt (Natural.succ old.step)
+                                        , Expect.equal (Natural.succ old.step)
+                                        ]
+                                        new.step
+
+                                ( Lapsed new, _ ) ->
+                                    -- Return to start
+                                    Expect.all
+                                        [ \_ -> Expect.false "Instantly graduate with no lapse steps" <| List.isEmpty settings.lapseSteps
+                                        , \{ ease } ->
+                                            Expect.equal old.ease ease
+                                        , \{ step } -> Expect.equal Natural.nil step
+                                        , \{ oldInterval } ->
+                                            Expect.equal old.oldInterval oldInterval
+                                        , \{ lapses } ->
+                                            Expect.equal old.lapses lapses
+                                        ]
+                                        new
+
+                                ( Review new, Easy ) ->
+                                    graduation new
+
+                                ( Review new, Good ) ->
+                                    Expect.all
+                                        [ \_ -> Expect.atLeast (List.length settings.lapseSteps) <| Natural.toInt (Natural.succ old.step)
+                                        , graduation
+                                        ]
+                                        new
+
+                                ( Review new, _ ) ->
+                                    Expect.all
+                                        [ \_ -> Expect.true "Instantly graduate with no lapse steps" <| List.isEmpty settings.lapseSteps
+                                        , graduation
+                                        ]
+                                        new
+
+                                _ ->
+                                    Expect.fail "Card cannot go from Lapsed to Learning or New"
+                       )
+        , fuzz2 fuzzResponse fuzzReview "Review cards should be handled appropriately" <|
+            \( time, answer, settings ) old ->
+                answerCard time answer settings { srsData = Review old }
+                    |> (\{ srsData } ->
+                            case srsData of
+                                Lapsed new ->
+                                    Expect.all
+                                        [ \_ -> Expect.equal Again answer
+                                        , \{ ease } -> Expect.within (Absolute 1.0e-9) (max 1.3 <| easeToFloat old.ease - 0.2) (easeToFloat ease)
+                                        , \{ step } -> Expect.equal Natural.nil step
+                                        , \{ oldInterval } -> Expect.equal old.interval oldInterval
+                                        , \{ lapses } -> Expect.equal (Natural.succ old.lapses) lapses
+                                        ]
+                                        new
+
+                                Review _ ->
+                                    expectReviewUpdate settings answer time old srsData
+
+                                _ ->
+                                    Expect.fail "Card cannot go from Review to Learning or New"
+                       )
         ]
 
 
-{-| The data associated with a card in the Learning queue.
+{-| Bound an interval by the maximum interval.
 -}
-type alias LearningData =
-    { lastReviewed : Time.Posix, step : Natural }
-
-
-{-| Fuzz data for a card in the Learning queue.
--}
-fuzzLearning : Fuzzer LearningData
-fuzzLearning =
-    Fuzz.map2
-        (\lastReviewed step ->
-            { lastReviewed = lastReviewed
-            , step = step
-            }
-        )
-        fuzzTime
-        fuzzNatural
-
-
-{-| The data associated with a card in the Lapsed queue.
--}
-type alias LapsedData =
-    { ease : Ease
-    , lapses : Natural
-    , lastReviewed : Time.Posix
-    , oldInterval : TimeInterval Days
-    , step : Natural
-    }
-
-
-{-| Fuzz data for a card in the Lapsed queue.
--}
-fuzzLapsed : Fuzzer LapsedData
-fuzzLapsed =
-    Fuzz.map5
-        (\ease lapses lastReviewed oldInterval step ->
-            { ease = ease
-            , lapses = lapses
-            , lastReviewed = lastReviewed
-            , oldInterval = oldInterval
-            , step = step
-            }
-        )
-        fuzzEase
-        fuzzNatural
-        fuzzTime
-        fuzzDayInterval
-        fuzzNatural
-
-
-{-| The data associated with a card in the Review queue.
--}
-type alias ReviewData =
-    { ease : Ease
-    , interval : TimeInterval Days
-    , lapses : Natural
-    , lastReviewed : Time.Posix
-    }
-
-
-{-| Fuzz data for a card in the Review queue.
--}
-fuzzReview : Fuzzer ReviewData
-fuzzReview =
-    Fuzz.map4
-        (\ease interval lapses lastReviewed ->
-            { ease = ease
-            , interval = interval
-            , lapses = lapses
-            , lastReviewed = lastReviewed
-            }
-        )
-        fuzzEase
-        fuzzDayInterval
-        fuzzNatural
-        fuzzTime
-
-
-{-| Fuzz a card.
--}
-fuzzCard : Fuzzer { srsData : SRSData }
-fuzzCard =
-    Fuzz.map (\d -> { srsData = d }) fuzzSRSData
-
-
-{-| Fuzz a deck of cards and settings.
--}
-fuzzDeck : Fuzzer { cards : Array { srsData : SRSData }, settings : AnkiSettings }
-fuzzDeck =
-    Fuzz.map2 (\c s -> { cards = c, settings = s }) (Fuzz.array fuzzCard) fuzzSettings
-
-
-{-| Fuzz settings for the Anki algorithm.
--}
-fuzzSettings : Fuzzer AnkiSettings
-fuzzSettings =
-    Fuzz.map
-        (\newSteps graduatingInterval easyInterval startingEase easyBonus intervalModifier maximumInterval hardInterval lapseSteps lapseNewInterval lapseMinimumInterval leechThreshold ->
-            { easyBonus = easyBonus
-            , easyInterval = easyInterval
-            , graduatingInterval = graduatingInterval
-            , hardInterval = hardInterval
-            , intervalModifier = intervalModifier
-            , lapseMinimumInterval = lapseMinimumInterval
-            , lapseNewInterval = lapseNewInterval
-            , lapseSteps = lapseSteps
-            , leechThreshold = leechThreshold
-            , maximumInterval = maximumInterval
-            , newSteps = newSteps
-            , startingEase = startingEase
-            }
-        )
-        (Fuzz.list fuzzMinuteInterval)
-        |> Fuzz.andMap fuzzDayInterval
-        |> Fuzz.andMap fuzzDayInterval
-        |> Fuzz.andMap fuzzEase
-        |> Fuzz.andMap (floatRange 0 1000)
-        |> Fuzz.andMap (floatRange 0 1000)
-        |> Fuzz.andMap fuzzDayInterval
-        |> Fuzz.andMap (floatRange 0 1000)
-        |> Fuzz.andMap (Fuzz.list fuzzMinuteInterval)
-        |> Fuzz.andMap (floatRange 0 1000)
-        |> Fuzz.andMap fuzzDayInterval
-        |> Fuzz.andMap fuzzNatural
-
-
-{-| Fuzz two cards that are identical other than having been last reviewed at
-different times.
--}
-fuzzDiffOverdueCards : Fuzzer ( ReviewData, ReviewData )
-fuzzDiffOverdueCards =
-    Fuzz.map5
-        (\ease interval t1 t2 lapses ->
-            ( { ease = ease
-              , interval = interval
-              , lapses = lapses
-              , lastReviewed = t1
-              }
-            , { ease = ease
-              , interval = interval
-              , lapses = lapses
-              , lastReviewed = t2
-              }
-            )
-        )
-        fuzzEase
-        fuzzDayInterval
-        fuzzTime
-        fuzzTime
-        fuzzNatural
-
-
-{-| Fuzz an answer quality.
--}
-fuzzAnswer : Fuzzer Answer
-fuzzAnswer =
-    Fuzz.oneOf
-        [ Fuzz.constant Again
-        , Fuzz.constant Hard
-        , Fuzz.constant Good
-        , Fuzz.constant Easy
-        ]
-
-
-{-| Fuzz a complete response to a card, with time, answer quality, and settings.
--}
-fuzzResponse : Fuzzer ( Time.Posix, Answer, AnkiSettings )
-fuzzResponse =
-    Fuzz.map3 (\t a s -> ( t, a, s )) fuzzTime fuzzAnswer fuzzSettings
-
-
-{-| Fuzz a card with an extra field.
--}
-fuzzExtendedCard : Fuzzer { srsData : SRSData, unrelatedField : Int }
-fuzzExtendedCard =
-    Fuzz.map2 (\d i -> { srsData = d, unrelatedField = i }) fuzzSRSData int
-
-
-{-| Get the ease of a card as a float.
--}
-easeFloatFromCard : { srsData : SRSData } -> Maybe Float
-easeFloatFromCard c =
-    case c.srsData of
-        Lapsed { ease } ->
-            Just <| easeToFloat ease
-
-        Review { ease } ->
-            Just <| easeToFloat ease
-
-        _ ->
-            Nothing
-
-
-{-| Get the date last reviewed from a card.
--}
-lastReviewedFromCard : Card a -> Maybe Time.Posix
-lastReviewedFromCard c =
-    case c.srsData of
-        Lapsed { lastReviewed } ->
-            Just lastReviewed
-
-        Learning { lastReviewed } ->
-            Just lastReviewed
-
-        New ->
-            Nothing
-
-        Review { lastReviewed } ->
-            Just lastReviewed
-
-
-{-| Get the review interval from a card as a number of minutes, only for cards
-in the Review queue.
--}
-reviewIntervalFromCard : Card a -> Maybe Int
-reviewIntervalFromCard { srsData } =
-    case srsData of
-        Review { interval } ->
-            Just <| timeIntervalToMinutes interval
-
-        _ ->
-            Nothing
-
-
-{-| Get the current (or pre-lapse) interval in minutes from a card.
--}
-dayIntervalFromCard : Card a -> Maybe Int
-dayIntervalFromCard { srsData } =
-    case srsData of
-        Lapsed { oldInterval } ->
-            Just <| timeIntervalToMinutes oldInterval
-
-        Review { interval } ->
-            Just <| timeIntervalToMinutes interval
-
-        _ ->
-            Nothing
-
-
-{-| Get the review interval from a card as a number of minutes.
--}
-getInterval : AnkiSettings -> SRSData -> Int
-getInterval settings srsData =
-    case srsData of
-        Lapsed { step } ->
-            ListX.getAt (Natural.toInt step) settings.lapseSteps
-                |> Maybe.map timeIntervalToMinutes
-                |> Maybe.withDefault 1
-
-        Learning { step } ->
-            ListX.getAt (Natural.toInt step) settings.newSteps
-                |> Maybe.map timeIntervalToMinutes
-                |> Maybe.withDefault 1
-
-        New ->
-            0
-
-        Review { interval } ->
-            timeIntervalToMinutes interval
-
-
-{-| Determine how many minutes overdue a card is.
--}
-overdueAmount : AnkiSettings -> Time.Posix -> SRSData -> Int
-overdueAmount settings time srsData =
-    case srsData of
-        New ->
-            0
-
-        _ ->
-            let
-                reviewed : Time.Posix
-                reviewed =
-                    lastReviewedFromCard { srsData = srsData }
-                        |> Maybe.withDefault (Time.millisToPosix 0)
-            in
-            diff Minute Time.utc reviewed time - getInterval settings srsData
-
-
-{-| Given an answer quality, determine what the next interval for a card should
-be, in minutes.
--}
-nextInterval : AnkiSettings -> Answer -> Time.Posix -> ReviewData -> Int
-nextInterval settings answer time old =
-    let
-        oldEase : Float
-        oldEase =
-            easeToFloat old.ease
-
-        newEase : Float
-        newEase =
-            case answer of
-                Again ->
-                    0
-
-                Easy ->
-                    oldEase + 0.15
-
-                Good ->
-                    oldEase
-
-                Hard ->
-                    max 1.3 <| oldEase - 0.15
-
-        oldIntervalInMinutes : Int
-        oldIntervalInMinutes =
-            timeIntervalToMinutes old.interval
-
-        modifier : Float
-        modifier =
-            case answer of
-                Again ->
-                    0
-
-                Easy ->
-                    newEase * max 1 settings.easyBonus
-
-                Good ->
-                    newEase
-
-                Hard ->
-                    min newEase settings.hardInterval
-
-        scaleInterval : Int
-        scaleInterval =
-            case answer of
-                Again ->
-                    0
-
-                Easy ->
-                    overdueAmount settings time (Review old)
-                        |> (+) oldIntervalInMinutes
-                        |> max oldIntervalInMinutes
-
-                Good ->
-                    overdueAmount settings time (Review old)
-                        |> (\minutesOverdue -> minutesOverdue // 2)
-                        |> (+) oldIntervalInMinutes
-                        |> max oldIntervalInMinutes
-
-                Hard ->
-                    oldIntervalInMinutes
-    in
-    modifier
-        * settings.intervalModifier
-        * toFloat scaleInterval
-        -- This magic number is max int; truncate does not play well with larger values.
-        |> min 2147483647
-        |> truncate
-        |> max (scaleInterval + 1440)
+boundedDayInterval : AnkiSettings -> TimeInterval Days -> TimeInterval Days
+boundedDayInterval { maximumInterval } interval =
+    timeIntervalToDays interval
+        |> min (timeIntervalToDays maximumInterval)
+        |> timeIntervalFromDays
 
 
 {-| Given an answer and an old and new review history, expect it to have been
@@ -492,136 +282,6 @@ expectReviewUpdate settings answer time oldData newData =
 
         _ ->
             Expect.fail "Unexpected review update encountered"
-
-
-{-| Bound an interval by the maximum interval.
--}
-boundedDayInterval : AnkiSettings -> TimeInterval Days -> TimeInterval Days
-boundedDayInterval { maximumInterval } interval =
-    timeIntervalToDays interval
-        |> min (timeIntervalToDays maximumInterval)
-        |> timeIntervalFromDays
-
-
-{-| Determine the range an interval in minutes should be fuzzed within.
--}
-intervalFuzzRange : AnkiSettings -> Int -> ( Int, Int )
-intervalFuzzRange { maximumInterval } interval =
-    let
-        dayInterval : Int
-        dayInterval =
-            interval // 1440
-    in
-    (if dayInterval < 2 then
-        ( 1, 1 )
-
-     else if dayInterval == 2 then
-        ( min 2 <| timeIntervalToDays maximumInterval
-        , min 3 <| timeIntervalToDays maximumInterval
-        )
-
-     else
-        let
-            fuzz : Int
-            fuzz =
-                if dayInterval < 7 then
-                    round << max 1 <| toFloat dayInterval * 0.25
-
-                else if dayInterval < 30 then
-                    round << max 2 <| toFloat dayInterval * 0.15
-
-                else
-                    round << max 4 <| toFloat dayInterval * 0.05
-        in
-        ( min (dayInterval - fuzz) <| timeIntervalToDays maximumInterval
-        , min (dayInterval + fuzz) <| timeIntervalToDays maximumInterval
-        )
-    )
-        |> Tuple.mapBoth ((*) 1440) ((*) 1440)
-
-
-{-| Given two different original unfuzzed intervals and fuzzed intervals,
-expect the interval in minutes of the former to be greater than the latter (or
-fall within the fuzzed range).
--}
-expectFuzzedGreaterInterval : AnkiSettings -> ( Int, Int ) -> ( Int, Int ) -> Expectation
-expectFuzzedGreaterInterval settings ( refInterval1, interval1 ) ( refInterval2, interval2 ) =
-    if interval1 >= interval2 then
-        Expect.pass
-
-    else
-        -- May be wrong due to fuzzing, so just make sure the ranges are okay
-        Expect.all
-            [ \() -> Expect.atLeast refInterval2 refInterval1
-            , \() -> expectFuzzedInterval settings refInterval1 interval1
-            , \() -> expectFuzzedInterval settings refInterval2 interval2
-            ]
-            ()
-
-
-{-| Expect an interval to fall within a fuzzed range.
--}
-expectFuzzedInterval : AnkiSettings -> Int -> (Int -> Expectation)
-expectFuzzedInterval settings interval =
-    let
-        ( minInt, maxInt ) =
-            intervalFuzzRange settings interval
-    in
-    Expect.all
-        [ Expect.atLeast minInt
-        , Expect.atMost maxInt
-        ]
-
-
-{-| Determine whether or not a card is a leech.
--}
-isCardLeech : AnkiSettings -> { srsData : SRSData } -> Bool
-isCardLeech { leechThreshold } c =
-    if leechThreshold == Natural.nil then
-        False
-
-    else
-        case c.srsData of
-            Lapsed { lapses } ->
-                Natural.toInt lapses >= Natural.toInt leechThreshold
-
-            Review { lapses } ->
-                Natural.toInt lapses >= Natural.toInt leechThreshold
-
-            _ ->
-                False
-
-
-{-| Tests for Json encoding/decoding.
--}
-suiteJson : Test
-suiteJson =
-    describe "Json encoding/decoding"
-        [ describe "Encode should always be able to be decoded"
-            [ fuzz fuzzSRSData "Encode SRSData to string" <|
-                \d ->
-                    Encode.encode 0
-                        (Encode.object [ ( "srsData", encoderSRSData d ) ])
-                        |> Decode.decodeString (Decode.field "srsData" decoderSRSData)
-                        |> Expect.equal (Ok d)
-            , fuzz fuzzSRSData "Encode SRSData to value" <|
-                \d ->
-                    encoderSRSData d
-                        |> Decode.decodeValue decoderSRSData
-                        |> Expect.equal (Ok d)
-            , fuzz fuzzSettings "Encode AnkiSettings to string" <|
-                \s ->
-                    Encode.encode 0
-                        (Encode.object [ ( "settings", encoderAnkiSettings s ) ])
-                        |> Decode.decodeString (Decode.field "settings" decoderAnkiSettings)
-                        |> Expect.equal (Ok s)
-            , fuzz fuzzSettings "Encode AnkiSettings to value" <|
-                \s ->
-                    encoderAnkiSettings s
-                        |> Decode.decodeValue decoderAnkiSettings
-                        |> Expect.equal (Ok s)
-            ]
-        ]
 
 
 {-| Tests for `answerCard`.
@@ -848,171 +508,99 @@ suiteAnswerCard =
         ]
 
 
-{-| Tests for updating cards in certain queues to the next.
+{-| Get the current (or pre-lapse) interval in minutes from a card.
 -}
-cardSchedulingTests : Test
-cardSchedulingTests =
-    describe "Card Scheduling"
-        [ fuzz fuzzResponse "New cards should be handled appropriately" <|
-            \( time, answer, settings ) ->
-                answerCard time answer settings { srsData = New }
-                    |> (\{ srsData } ->
-                            case srsData of
-                                Learning { step } ->
-                                    Expect.all
-                                        [ \() -> Expect.false "Starting steps" <| List.isEmpty settings.newSteps
-                                        , \() -> Expect.equal step Natural.nil
-                                        ]
-                                        ()
+dayIntervalFromCard : Card a -> Maybe Int
+dayIntervalFromCard { srsData } =
+    case srsData of
+        Lapsed { oldInterval } ->
+            Just <| timeIntervalToMinutes oldInterval
 
-                                Review r ->
-                                    Expect.all
-                                        [ \_ -> Expect.true "No starting steps" <| List.isEmpty settings.newSteps
-                                        , \{ ease } -> Expect.within (Absolute 1.0e-9) (easeToFloat settings.startingEase) <| easeToFloat ease
-                                        , \{ interval } -> Expect.equal (boundedDayInterval settings settings.graduatingInterval) interval
-                                        , \{ lapses } -> Expect.equal Natural.nil lapses
-                                        ]
-                                        r
+        Review { interval } ->
+            Just <| timeIntervalToMinutes interval
 
-                                _ ->
-                                    Expect.fail "Card should not go from New to anything but first Learning step or instant graduation with no steps"
-                       )
-        , fuzz2 fuzzResponse fuzzLearning "Learning cards should be handled appropriately" <|
-            \( time, answer, settings ) old ->
-                answerCard time answer settings { srsData = Learning old }
-                    |> (\{ srsData } ->
-                            let
-                                normalGraduation : ReviewData -> Expectation
-                                normalGraduation =
-                                    Expect.all
-                                        [ \_ -> Expect.atLeast (List.length settings.newSteps) <| Natural.toInt (Natural.succ old.step)
-                                        , \{ ease } -> Expect.within (Absolute 0.000000001) (easeToFloat settings.startingEase) <| easeToFloat ease
-                                        , \{ interval } -> Expect.equal (boundedDayInterval settings settings.graduatingInterval) interval
-                                        , \{ lapses } -> Expect.equal Natural.nil lapses
-                                        ]
-                            in
-                            case ( srsData, answer ) of
-                                ( Learning _, Easy ) ->
-                                    Expect.fail "Card should have graduated"
+        _ ->
+            Nothing
 
-                                ( Learning new, Good ) ->
-                                    Expect.all
-                                        [ \() ->
-                                            Expect.false "Do not advance past learning steps" <| Natural.toInt (Natural.succ old.step) >= List.length settings.newSteps
-                                        , \() -> Expect.equal (Natural.succ old.step) new.step
-                                        ]
-                                        ()
 
-                                ( Learning new, _ ) ->
-                                    -- Return to start
-                                    Expect.all
-                                        [ \_ -> Expect.false "Only return to start if there are new steps" <| List.isEmpty settings.newSteps
-                                        , Expect.equal Natural.nil
-                                        ]
-                                        new.step
+{-| Get the ease of a card as a float.
+-}
+easeFloatFromCard : { srsData : SRSData } -> Maybe Float
+easeFloatFromCard c =
+    case c.srsData of
+        Lapsed { ease } ->
+            Just <| easeToFloat ease
 
-                                ( Review new, Easy ) ->
-                                    -- Easy graduation
-                                    Expect.all
-                                        [ \{ ease } -> Expect.within (Absolute 0.000000001) (easeToFloat settings.startingEase) <| easeToFloat ease
-                                        , \{ interval } -> Expect.equal (boundedDayInterval settings settings.easyInterval) interval
-                                        , \{ lapses } -> Expect.equal Natural.nil lapses
-                                        ]
-                                        new
+        Review { ease } ->
+            Just <| easeToFloat ease
 
-                                ( Review new, Good ) ->
-                                    normalGraduation new
+        _ ->
+            Nothing
 
-                                ( Review new, _ ) ->
-                                    Expect.all
-                                        [ \_ -> Expect.true "Instantly graduate with no new steps" <| List.isEmpty settings.newSteps
-                                        , normalGraduation
-                                        ]
-                                        new
 
-                                _ ->
-                                    Expect.fail "Card cannot be New or Lapsed after answering"
-                       )
-        , fuzz2 fuzzResponse fuzzLapsed "Lapsed cards should be handled appropriately" <|
-            \( time, answer, settings ) old ->
-                answerCard time answer settings { srsData = Lapsed old }
-                    |> (\{ srsData } ->
-                            let
-                                graduation : ReviewData -> Expectation
-                                graduation =
-                                    Expect.all
-                                        [ \{ ease } -> Expect.equal old.ease ease
-                                        , \{ interval } -> Expect.equal (boundedDayInterval settings (minutesToDayInterval <| max (timeIntervalToMinutes settings.lapseMinimumInterval) (truncate <| min 2147483647 (settings.lapseNewInterval * toFloat (timeIntervalToMinutes old.oldInterval))))) interval
-                                        , \{ lapses } -> Expect.equal old.lapses lapses
-                                        ]
-                            in
-                            case ( srsData, answer ) of
-                                ( Lapsed _, Easy ) ->
-                                    Expect.fail "Card should have graduated"
+{-| Given two different original unfuzzed intervals and fuzzed intervals,
+expect the interval in minutes of the former to be greater than the latter (or
+fall within the fuzzed range).
+-}
+expectFuzzedGreaterInterval : AnkiSettings -> ( Int, Int ) -> ( Int, Int ) -> Expectation
+expectFuzzedGreaterInterval settings ( refInterval1, interval1 ) ( refInterval2, interval2 ) =
+    if interval1 >= interval2 then
+        Expect.pass
 
-                                ( Lapsed new, Good ) ->
-                                    Expect.all
-                                        [ \_ -> Expect.lessThan (List.length settings.lapseSteps) <| Natural.toInt (Natural.succ old.step)
-                                        , Expect.equal (Natural.succ old.step)
-                                        ]
-                                        new.step
+    else
+        -- May be wrong due to fuzzing, so just make sure the ranges are okay
+        Expect.all
+            [ \() -> Expect.atLeast refInterval2 refInterval1
+            , \() -> expectFuzzedInterval settings refInterval1 interval1
+            , \() -> expectFuzzedInterval settings refInterval2 interval2
+            ]
+            ()
 
-                                ( Lapsed new, _ ) ->
-                                    -- Return to start
-                                    Expect.all
-                                        [ \_ -> Expect.false "Instantly graduate with no lapse steps" <| List.isEmpty settings.lapseSteps
-                                        , \{ ease } ->
-                                            Expect.equal old.ease ease
-                                        , \{ step } -> Expect.equal Natural.nil step
-                                        , \{ oldInterval } ->
-                                            Expect.equal old.oldInterval oldInterval
-                                        , \{ lapses } ->
-                                            Expect.equal old.lapses lapses
-                                        ]
-                                        new
 
-                                ( Review new, Easy ) ->
-                                    graduation new
+{-| Fuzz two cards that are identical other than having been last reviewed at
+different times.
+-}
+fuzzDiffOverdueCards : Fuzzer ( ReviewData, ReviewData )
+fuzzDiffOverdueCards =
+    Fuzz.map5
+        (\ease interval t1 t2 lapses ->
+            ( { ease = ease
+              , interval = interval
+              , lapses = lapses
+              , lastReviewed = t1
+              }
+            , { ease = ease
+              , interval = interval
+              , lapses = lapses
+              , lastReviewed = t2
+              }
+            )
+        )
+        fuzzEase
+        fuzzDayInterval
+        fuzzTime
+        fuzzTime
+        fuzzNatural
 
-                                ( Review new, Good ) ->
-                                    Expect.all
-                                        [ \_ -> Expect.atLeast (List.length settings.lapseSteps) <| Natural.toInt (Natural.succ old.step)
-                                        , graduation
-                                        ]
-                                        new
 
-                                ( Review new, _ ) ->
-                                    Expect.all
-                                        [ \_ -> Expect.true "Instantly graduate with no lapse steps" <| List.isEmpty settings.lapseSteps
-                                        , graduation
-                                        ]
-                                        new
+{-| Fuzz a card with an extra field.
+-}
+fuzzExtendedCard : Fuzzer { srsData : SRSData, unrelatedField : Int }
+fuzzExtendedCard =
+    Fuzz.map2 (\d i -> { srsData = d, unrelatedField = i }) fuzzSRSData int
 
-                                _ ->
-                                    Expect.fail "Card cannot go from Lapsed to Learning or New"
-                       )
-        , fuzz2 fuzzResponse fuzzReview "Review cards should be handled appropriately" <|
-            \( time, answer, settings ) old ->
-                answerCard time answer settings { srsData = Review old }
-                    |> (\{ srsData } ->
-                            case srsData of
-                                Lapsed new ->
-                                    Expect.all
-                                        [ \_ -> Expect.equal Again answer
-                                        , \{ ease } -> Expect.within (Absolute 1.0e-9) (max 1.3 <| easeToFloat old.ease - 0.2) (easeToFloat ease)
-                                        , \{ step } -> Expect.equal Natural.nil step
-                                        , \{ oldInterval } -> Expect.equal old.interval oldInterval
-                                        , \{ lapses } -> Expect.equal (Natural.succ old.lapses) lapses
-                                        ]
-                                        new
 
-                                Review _ ->
-                                    expectReviewUpdate settings answer time old srsData
+{-| Get the review interval from a card as a number of minutes, only for cards
+in the Review queue.
+-}
+reviewIntervalFromCard : Card a -> Maybe Int
+reviewIntervalFromCard { srsData } =
+    case srsData of
+        Review { interval } ->
+            Just <| timeIntervalToMinutes interval
 
-                                _ ->
-                                    Expect.fail "Card cannot go from Review to Learning or New"
-                       )
-        ]
+        _ ->
+            Nothing
 
 
 {-| Tests for `answerCardInDeck`.
@@ -1252,3 +840,415 @@ suiteGetLeeches =
                     |> ListX.count (isCardLeech deck.settings << Tuple.second)
                     |> Expect.equal 0
         ]
+
+
+{-| Tests for Json encoding/decoding.
+-}
+suiteJson : Test
+suiteJson =
+    describe "Json encoding/decoding"
+        [ describe "Encode should always be able to be decoded"
+            [ fuzz fuzzSRSData "Encode SRSData to string" <|
+                \d ->
+                    Encode.encode 0
+                        (Encode.object [ ( "srsData", encoderSRSData d ) ])
+                        |> Decode.decodeString (Decode.field "srsData" decoderSRSData)
+                        |> Expect.equal (Ok d)
+            , fuzz fuzzSRSData "Encode SRSData to value" <|
+                \d ->
+                    encoderSRSData d
+                        |> Decode.decodeValue decoderSRSData
+                        |> Expect.equal (Ok d)
+            , fuzz fuzzSettings "Encode AnkiSettings to string" <|
+                \s ->
+                    Encode.encode 0
+                        (Encode.object [ ( "settings", encoderAnkiSettings s ) ])
+                        |> Decode.decodeString (Decode.field "settings" decoderAnkiSettings)
+                        |> Expect.equal (Ok s)
+            , fuzz fuzzSettings "Encode AnkiSettings to value" <|
+                \s ->
+                    encoderAnkiSettings s
+                        |> Decode.decodeValue decoderAnkiSettings
+                        |> Expect.equal (Ok s)
+            ]
+        ]
+
+
+{-| The data associated with a card in the Lapsed queue.
+-}
+type alias LapsedData =
+    { ease : Ease
+    , lapses : Natural
+    , lastReviewed : Time.Posix
+    , oldInterval : TimeInterval Days
+    , step : Natural
+    }
+
+
+{-| The data associated with a card in the Learning queue.
+-}
+type alias LearningData =
+    { lastReviewed : Time.Posix, step : Natural }
+
+
+{-| The data associated with a card in the Review queue.
+-}
+type alias ReviewData =
+    { ease : Ease
+    , interval : TimeInterval Days
+    , lapses : Natural
+    , lastReviewed : Time.Posix
+    }
+
+
+{-| Expect an interval to fall within a fuzzed range.
+-}
+expectFuzzedInterval : AnkiSettings -> Int -> (Int -> Expectation)
+expectFuzzedInterval settings interval =
+    let
+        ( minInt, maxInt ) =
+            intervalFuzzRange settings interval
+    in
+    Expect.all
+        [ Expect.atLeast minInt
+        , Expect.atMost maxInt
+        ]
+
+
+{-| Determine the range an interval in minutes should be fuzzed within.
+-}
+intervalFuzzRange : AnkiSettings -> Int -> ( Int, Int )
+intervalFuzzRange { maximumInterval } interval =
+    let
+        dayInterval : Int
+        dayInterval =
+            interval // 1440
+    in
+    (if dayInterval < 2 then
+        ( 1, 1 )
+
+     else if dayInterval == 2 then
+        ( min 2 <| timeIntervalToDays maximumInterval
+        , min 3 <| timeIntervalToDays maximumInterval
+        )
+
+     else
+        let
+            fuzz : Int
+            fuzz =
+                if dayInterval < 7 then
+                    round << max 1 <| toFloat dayInterval * 0.25
+
+                else if dayInterval < 30 then
+                    round << max 2 <| toFloat dayInterval * 0.15
+
+                else
+                    round << max 4 <| toFloat dayInterval * 0.05
+        in
+        ( min (dayInterval - fuzz) <| timeIntervalToDays maximumInterval
+        , min (dayInterval + fuzz) <| timeIntervalToDays maximumInterval
+        )
+    )
+        |> Tuple.mapBoth ((*) 1440) ((*) 1440)
+
+
+{-| Fuzz an answer quality.
+-}
+fuzzAnswer : Fuzzer Answer
+fuzzAnswer =
+    Fuzz.oneOf
+        [ Fuzz.constant Again
+        , Fuzz.constant Hard
+        , Fuzz.constant Good
+        , Fuzz.constant Easy
+        ]
+
+
+{-| Fuzz a card.
+-}
+fuzzCard : Fuzzer { srsData : SRSData }
+fuzzCard =
+    Fuzz.map (\d -> { srsData = d }) fuzzSRSData
+
+
+{-| Fuzz an interval in days.
+-}
+fuzzDayInterval : Fuzzer (TimeInterval Days)
+fuzzDayInterval =
+    Fuzz.map timeIntervalFromDays <| intRange 0 36500
+
+
+{-| Fuzz a deck of cards and settings.
+-}
+fuzzDeck : Fuzzer { cards : Array { srsData : SRSData }, settings : AnkiSettings }
+fuzzDeck =
+    Fuzz.map2 (\c s -> { cards = c, settings = s }) (Fuzz.array fuzzCard) fuzzSettings
+
+
+{-| Fuzz an `Ease`.
+-}
+fuzzEase : Fuzzer Ease
+fuzzEase =
+    Fuzz.map createEase (floatRange 0 1000)
+
+
+{-| Fuzz data for a card in the Lapsed queue.
+-}
+fuzzLapsed : Fuzzer LapsedData
+fuzzLapsed =
+    Fuzz.map5
+        (\ease lapses lastReviewed oldInterval step ->
+            { ease = ease
+            , lapses = lapses
+            , lastReviewed = lastReviewed
+            , oldInterval = oldInterval
+            , step = step
+            }
+        )
+        fuzzEase
+        fuzzNatural
+        fuzzTime
+        fuzzDayInterval
+        fuzzNatural
+
+
+{-| Fuzz data for a card in the Learning queue.
+-}
+fuzzLearning : Fuzzer LearningData
+fuzzLearning =
+    Fuzz.map2
+        (\lastReviewed step ->
+            { lastReviewed = lastReviewed
+            , step = step
+            }
+        )
+        fuzzTime
+        fuzzNatural
+
+
+{-| Fuzz a complete response to a card, with time, answer quality, and settings.
+-}
+fuzzResponse : Fuzzer ( Time.Posix, Answer, AnkiSettings )
+fuzzResponse =
+    Fuzz.map3 (\t a s -> ( t, a, s )) fuzzTime fuzzAnswer fuzzSettings
+
+
+{-| Fuzz data for a card in the Review queue.
+-}
+fuzzReview : Fuzzer ReviewData
+fuzzReview =
+    Fuzz.map4
+        (\ease interval lapses lastReviewed ->
+            { ease = ease
+            , interval = interval
+            , lapses = lapses
+            , lastReviewed = lastReviewed
+            }
+        )
+        fuzzEase
+        fuzzDayInterval
+        fuzzNatural
+        fuzzTime
+
+
+{-| Fuzz a review history for a card.
+-}
+fuzzSRSData : Fuzzer SRSData
+fuzzSRSData =
+    Fuzz.oneOf
+        [ Fuzz.constant New
+        , Fuzz.map Learning fuzzLearning
+        , Fuzz.map Review fuzzReview
+        , Fuzz.map Lapsed fuzzLapsed
+        ]
+
+
+{-| Fuzz settings for the Anki algorithm.
+-}
+fuzzSettings : Fuzzer AnkiSettings
+fuzzSettings =
+    Fuzz.map
+        (\newSteps graduatingInterval easyInterval startingEase easyBonus intervalModifier maximumInterval hardInterval lapseSteps lapseNewInterval lapseMinimumInterval leechThreshold ->
+            { easyBonus = easyBonus
+            , easyInterval = easyInterval
+            , graduatingInterval = graduatingInterval
+            , hardInterval = hardInterval
+            , intervalModifier = intervalModifier
+            , lapseMinimumInterval = lapseMinimumInterval
+            , lapseNewInterval = lapseNewInterval
+            , lapseSteps = lapseSteps
+            , leechThreshold = leechThreshold
+            , maximumInterval = maximumInterval
+            , newSteps = newSteps
+            , startingEase = startingEase
+            }
+        )
+        (Fuzz.list fuzzMinuteInterval)
+        |> Fuzz.andMap fuzzDayInterval
+        |> Fuzz.andMap fuzzDayInterval
+        |> Fuzz.andMap fuzzEase
+        |> Fuzz.andMap (floatRange 0 1000)
+        |> Fuzz.andMap (floatRange 0 1000)
+        |> Fuzz.andMap fuzzDayInterval
+        |> Fuzz.andMap (floatRange 0 1000)
+        |> Fuzz.andMap (Fuzz.list fuzzMinuteInterval)
+        |> Fuzz.andMap (floatRange 0 1000)
+        |> Fuzz.andMap fuzzDayInterval
+        |> Fuzz.andMap fuzzNatural
+
+
+{-| Fuzz an interval in minutes.
+-}
+fuzzMinuteInterval : Fuzzer (TimeInterval Minutes)
+fuzzMinuteInterval =
+    Fuzz.map timeIntervalFromMinutes <| intRange 0 52560000
+
+
+{-| Get the review interval from a card as a number of minutes.
+-}
+getInterval : AnkiSettings -> SRSData -> Int
+getInterval settings srsData =
+    case srsData of
+        Lapsed { step } ->
+            ListX.getAt (Natural.toInt step) settings.lapseSteps
+                |> Maybe.map timeIntervalToMinutes
+                |> Maybe.withDefault 1
+
+        Learning { step } ->
+            ListX.getAt (Natural.toInt step) settings.newSteps
+                |> Maybe.map timeIntervalToMinutes
+                |> Maybe.withDefault 1
+
+        New ->
+            0
+
+        Review { interval } ->
+            timeIntervalToMinutes interval
+
+
+{-| Determine whether or not a card is a leech.
+-}
+isCardLeech : AnkiSettings -> { srsData : SRSData } -> Bool
+isCardLeech { leechThreshold } c =
+    if leechThreshold == Natural.nil then
+        False
+
+    else
+        case c.srsData of
+            Lapsed { lapses } ->
+                Natural.toInt lapses >= Natural.toInt leechThreshold
+
+            Review { lapses } ->
+                Natural.toInt lapses >= Natural.toInt leechThreshold
+
+            _ ->
+                False
+
+
+{-| Get the date last reviewed from a card.
+-}
+lastReviewedFromCard : Card a -> Maybe Time.Posix
+lastReviewedFromCard c =
+    case c.srsData of
+        Lapsed { lastReviewed } ->
+            Just lastReviewed
+
+        Learning { lastReviewed } ->
+            Just lastReviewed
+
+        New ->
+            Nothing
+
+        Review { lastReviewed } ->
+            Just lastReviewed
+
+
+{-| Given an answer quality, determine what the next interval for a card should
+be, in minutes.
+-}
+nextInterval : AnkiSettings -> Answer -> Time.Posix -> ReviewData -> Int
+nextInterval settings answer time old =
+    let
+        oldEase : Float
+        oldEase =
+            easeToFloat old.ease
+
+        newEase : Float
+        newEase =
+            case answer of
+                Again ->
+                    0
+
+                Easy ->
+                    oldEase + 0.15
+
+                Good ->
+                    oldEase
+
+                Hard ->
+                    max 1.3 <| oldEase - 0.15
+
+        oldIntervalInMinutes : Int
+        oldIntervalInMinutes =
+            timeIntervalToMinutes old.interval
+
+        modifier : Float
+        modifier =
+            case answer of
+                Again ->
+                    0
+
+                Easy ->
+                    newEase * max 1 settings.easyBonus
+
+                Good ->
+                    newEase
+
+                Hard ->
+                    min newEase settings.hardInterval
+
+        scaleInterval : Int
+        scaleInterval =
+            case answer of
+                Again ->
+                    0
+
+                Easy ->
+                    overdueAmount settings time (Review old)
+                        |> (+) oldIntervalInMinutes
+                        |> max oldIntervalInMinutes
+
+                Good ->
+                    overdueAmount settings time (Review old)
+                        |> (\minutesOverdue -> minutesOverdue // 2)
+                        |> (+) oldIntervalInMinutes
+                        |> max oldIntervalInMinutes
+
+                Hard ->
+                    oldIntervalInMinutes
+    in
+    modifier
+        * settings.intervalModifier
+        * toFloat scaleInterval
+        -- This magic number is max int; truncate does not play well with larger values.
+        |> min 2147483647
+        |> truncate
+        |> max (scaleInterval + 1440)
+
+
+{-| Determine how many minutes overdue a card is.
+-}
+overdueAmount : AnkiSettings -> Time.Posix -> SRSData -> Int
+overdueAmount settings time srsData =
+    case srsData of
+        New ->
+            0
+
+        _ ->
+            let
+                reviewed : Time.Posix
+                reviewed =
+                    lastReviewedFromCard { srsData = srsData }
+                        |> Maybe.withDefault (Time.millisToPosix 0)
+            in
+            diff Minute Time.utc reviewed time - getInterval settings srsData

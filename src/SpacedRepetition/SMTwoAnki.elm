@@ -551,379 +551,6 @@ answerCard time answer settings card =
         |> scheduleCard settings time answer
 
 
-{-| `getDueCardIndices` takes the current time (in the `Time.Posix` format returned by the `now` task of the core `Time` module) and a `Deck` and returns the indices of the subset of the `Deck` that is due for review. The returned indices will be sorted in the following order:
-
-1.  Lapsed cards overdue for review
-    1.  Cards more overdue (by proportion of interval)
-    2.  Cards less overdue (by proportion of interval)
-2.  Review cards overdue for review
-    1.  Cards more overdue (by proportion of interval)
-    2.  Cards less overdue (by proportion of interval)
-3.  Learning cards overdue for review
-    1.  Cards more overdue (by proportion of interval)
-    2.  Cards less overdue (by proportion of interval)
-4.  Any new cards in the deck (never having been studied before).
-
-`getDueCardIndices` will show cards up to 20 minutes early, as per Anki.
-
--}
-getDueCardIndices : Time.Posix -> Deck a b -> List Int
-getDueCardIndices time deck =
-    Array.toIndexedList deck.cards
-        |> List.filter
-            (isDue deck.settings time << Tuple.second)
-        |> List.sortWith
-            (\( _, c1 ) ( _, c2 ) -> compareDue deck.settings time c1 c2)
-        |> ListX.reverseMap Tuple.first
-
-
-{-| `getDueCardIndicesWithDetails` takes the current time (in the `Time.Posix` format returned by the `now` task of the core `Time` module) and a `Deck` and returns the subset of the `Deck` that is due for review as a list of records, providing their index, which queue they are currently in (e.g. whether they are being learned or reviewed) along with any relevant queue details, and whether or not they are leeches. The returned indices will be sorted in the following order:
-
-1.  Lapsed cards overdue for review
-    1.  Cards more overdue (by proportion of interval)
-    2.  Cards less overdue (by proportion of interval)
-2.  Review cards overdue for review
-    1.  Cards more overdue (by proportion of interval)
-    2.  Cards less overdue (by proportion of interval)
-3.  Learning cards overdue for review
-    1.  Cards more overdue (by proportion of interval)
-    2.  Cards less overdue (by proportion of interval)
-4.  Any new cards in the deck (never having been studied before).
-
-`getDueCardIndicesWithDetails` will show cards up to 20 minutes early, as per Anki.
-
--}
-getDueCardIndicesWithDetails :
-    Time.Posix
-    -> Deck a b
-    -> List { index : Int, isLeech : Bool, queueDetails : QueueDetails }
-getDueCardIndicesWithDetails time deck =
-    Array.toIndexedList deck.cards
-        |> List.filter
-            (isDue deck.settings time << Tuple.second)
-        |> List.sortWith
-            (\( _, c1 ) ( _, c2 ) -> compareDue deck.settings time c1 c2)
-        |> ListX.reverseMap
-            (\( index, card ) ->
-                { index = index
-                , isLeech = isLeech deck.settings card
-                , queueDetails = getQueueDetails deck.settings card
-                }
-            )
-
-
-{-| `getLeeches` takes a `Deck` and returns the indices of the subset of the `Deck` that are leeches (as `List Int`). The returned indices will be sorted in the following order:
-
-1.  Cards with more lapses
-2.  Cards with fewer lapses
-
--}
-getLeeches : Deck a b -> List Int
-getLeeches deck =
-    Array.toIndexedList deck.cards
-        |> List.filter (isLeech deck.settings << Tuple.second)
-        |> List.sortWith
-            (\( _, c1 ) ( _, c2 ) -> compare (numberOfLapses c1) (numberOfLapses c2))
-        |> ListX.reverseMap Tuple.first
-
-
-{-| `QueueDetails` represents the current status of a card.
-
-  - `NewCard` -- A card that has never before been studied (encountered) by the user.
-
-  - `LearningQueue {...}` -- A card that is in the initial learning queue, progressing through the steps specified in `AnkiSettings.newSteps`.
-      - `lastReviewed : Time.Posix` -- The date and time the card was last reviewed.
-      - `intervalInMinutes : Int` -- The interval, in minutes from the date last seen, that the card is slated for review in.
-
-  - `ReviewQueue {...}` -- A card that is being reviewed for retention.
-      - `lastReviewed : Time.Posix` -- The date and time the card was last reviewed.
-      - `intervalInDays : Int` -- The interval, in days from the date last seen, that the card was slated for review in.
-      - `lapses : Int` -- The number of times the card has "lapsed," i.e. been forgotten/incorrectly answered by the user.
-
-  - `LapsedQueue {...}` -- A card that has lapsed, i.e. one that was being reviewed but was answered incorrectly and is now being re-learned.
-      - `lastReviewed : Time.Posix` -- The date and time the card was last reviewed.
-      - `formerIntervalInDays : Int` -- The interval, in days from the date last seen, that the card was slated for review in prior to last being forgotten/ answered incorrectly.
-      - `intervalInMinutes : Int` -- The interval, in minutes from the date last seen, that the card is slated for review in.
-      - `lapses : Int` -- The number of times the card has "lapsed," i.e. been forgotten/incorrectly answered by the user.
-
--}
-type QueueDetails
-    = NewCard
-    | LearningQueue
-        { lastReviewed : Time.Posix
-        , intervalInMinutes : Int
-        }
-    | ReviewQueue
-        { lastReviewed : Time.Posix
-        , intervalInDays : Int
-        , lapses : Int
-        }
-    | LapsedQueue
-        { lastReviewed : Time.Posix
-        , formerIntervalInDays : Int
-        , intervalInMinutes : Int
-        , lapses : Int
-        }
-
-
-{-| `getCardDetails` returns the current queue status for a given card and whether or not it is a leech. If you require this for every due card, simply use `getDueCardIndicesWithDetails`.
--}
-getCardDetails : AnkiSettings -> Card a -> { isLeech : Bool, queueDetails : QueueDetails }
-getCardDetails s c =
-    { isLeech = isLeech s c, queueDetails = getQueueDetails s c }
-
-
-{-| Opaque type. You don't need it, except maybe in type signatures.
--}
-type alias Ease =
-    SpacedRepetition.Internal.SMTwoAnki.Ease
-
-
-{-| Opaque type. You don't need it, except maybe in type signatures.
--}
-type alias Days =
-    SpacedRepetition.Internal.SMTwoAnki.Days
-
-
-{-| Opaque type. You don't need it, except maybe in type signatures.
--}
-type alias Minutes =
-    SpacedRepetition.Internal.SMTwoAnki.Minutes
-
-
-{-| Opaque type. You don't need it, except maybe in type signatures.
--}
-type alias TimeInterval a =
-    SpacedRepetition.Internal.SMTwoAnki.TimeInterval a
-
-
-{-| Opaque type. You don't need it, except maybe in type signatures.
--}
-type alias Natural =
-    Natural.Natural
-
-
-
--- * Non-exposed only below here
-
-
-{-| Get the number of times a card has been forgotten from a card.
--}
-numberOfLapses : Card a -> Int
-numberOfLapses card =
-    case card.srsData of
-        Lapsed { lapses } ->
-            Natural.toInt lapses
-
-        Review { lapses } ->
-            Natural.toInt lapses
-
-        _ ->
-            0
-
-
-{-| Get whether or not a card is a "leech."
--}
-isLeech : AnkiSettings -> Card a -> Bool
-isLeech settings card =
-    if settings.leechThreshold == Natural.nil then
-        False
-
-    else
-        numberOfLapses card >= Natural.toInt settings.leechThreshold
-
-
-{-| Given a card, return its review status.
--}
-getQueueDetails : AnkiSettings -> Card a -> QueueDetails
-getQueueDetails s c =
-    case c.srsData of
-        Lapsed { lapses, lastReviewed, oldInterval } ->
-            LapsedQueue
-                { formerIntervalInDays = timeIntervalToDays oldInterval
-                , intervalInMinutes = getCurrentIntervalInMinutes s c
-                , lapses = Natural.toInt lapses
-                , lastReviewed = lastReviewed
-                }
-
-        Learning { lastReviewed } ->
-            LearningQueue
-                { intervalInMinutes = getCurrentIntervalInMinutes s c
-                , lastReviewed = lastReviewed
-                }
-
-        New ->
-            NewCard
-
-        Review { interval, lapses, lastReviewed } ->
-            ReviewQueue
-                { intervalInDays = timeIntervalToDays interval
-                , lapses = Natural.toInt lapses
-                , lastReviewed = lastReviewed
-                }
-
-
-{-| Compare the "due"-ness of two cards at a given time.
--}
-compareDue : AnkiSettings -> Time.Posix -> Card a -> Card a -> Order
-compareDue settings time c1 c2 =
-    case ( c1.srsData, c2.srsData ) of
-        ( New, New ) ->
-            EQ
-
-        ( New, _ ) ->
-            LT
-
-        ( _, New ) ->
-            GT
-
-        ( Learning _, Learning _ ) ->
-            let
-                ( overdueAmt1, _ ) =
-                    overdueAmount settings time c1
-
-                ( overdueAmt2, _ ) =
-                    overdueAmount settings time c2
-            in
-            compare overdueAmt1 overdueAmt2
-
-        ( Learning _, _ ) ->
-            LT
-
-        ( _, Learning _ ) ->
-            GT
-
-        ( Review _, Review _ ) ->
-            let
-                ( overdueAmt1, _ ) =
-                    overdueAmount settings time c1
-
-                ( overdueAmt2, _ ) =
-                    overdueAmount settings time c2
-            in
-            compare overdueAmt1 overdueAmt2
-
-        ( Review _, _ ) ->
-            LT
-
-        ( _, Review _ ) ->
-            GT
-
-        ( Lapsed _, Lapsed _ ) ->
-            let
-                ( overdueAmt1, _ ) =
-                    overdueAmount settings time c1
-
-                ( overdueAmt2, _ ) =
-                    overdueAmount settings time c2
-            in
-            compare overdueAmt1 overdueAmt2
-
-
-{-| Check if a card is currently due to be studied.
--}
-isDue : AnkiSettings -> Time.Posix -> Card a -> Bool
-isDue settings time card =
-    case card.srsData of
-        New ->
-            True
-
-        _ ->
-            let
-                ( _, minutesOverdue ) =
-                    overdueAmount settings time card
-            in
-            minutesOverdue >= -20
-
-
-{-| Given settings, an answer quality, the current time, and a card, determine
-the interval that will be used to determine the next interval for the card,
-taking into account the amount by which it is overdue (in full for an `Easy`
-answer or in part for a `Good` answer).
--}
-effectiveInterval : AnkiSettings -> Answer -> Time.Posix -> Card a -> TimeInterval Minutes
-effectiveInterval settings answer time card =
-    let
-        interval : Int
-        interval =
-            getCurrentIntervalInMinutes settings card
-    in
-    (case answer of
-        Again ->
-            0
-
-        Easy ->
-            overdueAmount settings time card
-                |> Tuple.second
-                |> (+) interval
-                |> max interval
-
-        Good ->
-            overdueAmount settings time card
-                |> Tuple.second
-                |> (\minutesOverdue -> minutesOverdue // 2)
-                |> (+) interval
-                |> max interval
-
-        Hard ->
-            interval
-    )
-        |> timeIntervalFromMinutes
-
-
-{-| Given settings and the current time, determine what proportion overdue a
-card is, i.e. `0.9` is 90% of the way to being overdue and `2` is the interval again overdue, and also the absolute number of minutes overdue.
--}
-overdueAmount : AnkiSettings -> Time.Posix -> Card a -> ( Float, Int )
-overdueAmount settings time card =
-    case card.srsData of
-        New ->
-            ( 1.0, 0 )
-
-        _ ->
-            let
-                reviewed : Time.Posix
-                reviewed =
-                    case card.srsData of
-                        Lapsed { lastReviewed } ->
-                            lastReviewed
-
-                        Learning { lastReviewed } ->
-                            lastReviewed
-
-                        New ->
-                            Time.millisToPosix 0
-
-                        Review { lastReviewed } ->
-                            lastReviewed
-
-                interval : Int
-                interval =
-                    getCurrentIntervalInMinutes settings card
-
-                minutesOverdue : Int
-                minutesOverdue =
-                    diff Minute Time.utc reviewed time - interval
-            in
-            -- (Relative Amount Overdue, Absolute Minutes Overdue)
-            ( toFloat minutesOverdue / toFloat interval, minutesOverdue )
-
-
-{-| Given a scaling factor and a minimum interval, scale another interval by
-that factor and ensure it is at least as much as the minimum.
--}
-scaleIntervalWithMinimum : Float -> TimeInterval a -> TimeInterval b -> TimeInterval Days
-scaleIntervalWithMinimum f minInterval oldInterval =
-    -- This magic number is max int; truncate does not play well with larger values.
-    timeIntervalToMinutes oldInterval
-        |> toFloat
-        |> (*) f
-        |> min 2147483647
-        |> truncate
-        |> max (timeIntervalToMinutes minInterval)
-        |> minutesToDayInterval
-
-
 {-| Given settings, the current time, and an answer quality, schedule a card for
 future review, updating its queue status.
 -}
@@ -1053,57 +680,39 @@ scheduleCard settings time answer card =
            )
 
 
-{-| Given an answer quality, update the ease of a card.
+{-| Given settings, an answer quality, the current time, and a card, determine
+the interval that will be used to determine the next interval for the card,
+taking into account the amount by which it is overdue (in full for an `Easy`
+answer or in part for a `Good` answer).
 -}
-updateEase : Answer -> Card a -> Card a
-updateEase answer card =
-    case card.srsData of
-        Review r ->
-            let
-                adjEase : Ease -> Ease
-                adjEase =
-                    case answer of
-                        Again ->
-                            adjustEase -0.2
-
-                        Easy ->
-                            adjustEase 0.15
-
-                        Good ->
-                            identity
-
-                        Hard ->
-                            adjustEase -0.15
-            in
-            { card | srsData = Review { r | ease = adjEase r.ease } }
-
-        _ ->
-            -- Ease ONLY gets updated when in Review phase
-            card
-
-
-{-| Return the currently-scheduled inter-review interval of a card in minutes.
--}
-getCurrentIntervalInMinutes : AnkiSettings -> Card a -> Int
-getCurrentIntervalInMinutes settings { srsData } =
-    case srsData of
-        Lapsed { step } ->
-            ListX.getAt (Natural.toInt step) settings.lapseSteps
-                |> Maybe.map timeIntervalToMinutes
-                -- If there are no steps, the card should immediately be due.
-                |> Maybe.withDefault 1
-
-        Learning { step } ->
-            ListX.getAt (Natural.toInt step) settings.newSteps
-                |> Maybe.map timeIntervalToMinutes
-                -- If there are no steps, the card should immediately be due.
-                |> Maybe.withDefault 1
-
-        New ->
+effectiveInterval : AnkiSettings -> Answer -> Time.Posix -> Card a -> TimeInterval Minutes
+effectiveInterval settings answer time card =
+    let
+        interval : Int
+        interval =
+            getCurrentIntervalInMinutes settings card
+    in
+    (case answer of
+        Again ->
             0
 
-        Review { interval } ->
-            timeIntervalToMinutes interval
+        Easy ->
+            overdueAmount settings time card
+                |> Tuple.second
+                |> (+) interval
+                |> max interval
+
+        Good ->
+            overdueAmount settings time card
+                |> Tuple.second
+                |> (\minutesOverdue -> minutesOverdue // 2)
+                |> (+) interval
+                |> max interval
+
+        Hard ->
+            interval
+    )
+        |> timeIntervalFromMinutes
 
 
 {-| Given the current time as a seed, fuzz a time interval by a random amount as
@@ -1165,3 +774,394 @@ fuzzedIntervalGenerator interval =
                     ( 1, 1 )
     in
     Random.map timeIntervalFromDays <| Random.int minInterval maxInterval
+
+
+{-| Given a scaling factor and a minimum interval, scale another interval by
+that factor and ensure it is at least as much as the minimum.
+-}
+scaleIntervalWithMinimum : Float -> TimeInterval a -> TimeInterval b -> TimeInterval Days
+scaleIntervalWithMinimum f minInterval oldInterval =
+    -- This magic number is max int; truncate does not play well with larger values.
+    timeIntervalToMinutes oldInterval
+        |> toFloat
+        |> (*) f
+        |> min 2147483647
+        |> truncate
+        |> max (timeIntervalToMinutes minInterval)
+        |> minutesToDayInterval
+
+
+{-| Given an answer quality, update the ease of a card.
+-}
+updateEase : Answer -> Card a -> Card a
+updateEase answer card =
+    case card.srsData of
+        Review r ->
+            let
+                adjEase : Ease -> Ease
+                adjEase =
+                    case answer of
+                        Again ->
+                            adjustEase -0.2
+
+                        Easy ->
+                            adjustEase 0.15
+
+                        Good ->
+                            identity
+
+                        Hard ->
+                            adjustEase -0.15
+            in
+            { card | srsData = Review { r | ease = adjEase r.ease } }
+
+        _ ->
+            -- Ease ONLY gets updated when in Review phase
+            card
+
+
+{-| `getDueCardIndices` takes the current time (in the `Time.Posix` format returned by the `now` task of the core `Time` module) and a `Deck` and returns the indices of the subset of the `Deck` that is due for review. The returned indices will be sorted in the following order:
+
+1.  Lapsed cards overdue for review
+    1.  Cards more overdue (by proportion of interval)
+    2.  Cards less overdue (by proportion of interval)
+2.  Review cards overdue for review
+    1.  Cards more overdue (by proportion of interval)
+    2.  Cards less overdue (by proportion of interval)
+3.  Learning cards overdue for review
+    1.  Cards more overdue (by proportion of interval)
+    2.  Cards less overdue (by proportion of interval)
+4.  Any new cards in the deck (never having been studied before).
+
+`getDueCardIndices` will show cards up to 20 minutes early, as per Anki.
+
+-}
+getDueCardIndices : Time.Posix -> Deck a b -> List Int
+getDueCardIndices time deck =
+    Array.toIndexedList deck.cards
+        |> List.filter
+            (isDue deck.settings time << Tuple.second)
+        |> List.sortWith
+            (\( _, c1 ) ( _, c2 ) -> compareDue deck.settings time c1 c2)
+        |> ListX.reverseMap Tuple.first
+
+
+{-| `getDueCardIndicesWithDetails` takes the current time (in the `Time.Posix` format returned by the `now` task of the core `Time` module) and a `Deck` and returns the subset of the `Deck` that is due for review as a list of records, providing their index, which queue they are currently in (e.g. whether they are being learned or reviewed) along with any relevant queue details, and whether or not they are leeches. The returned indices will be sorted in the following order:
+
+1.  Lapsed cards overdue for review
+    1.  Cards more overdue (by proportion of interval)
+    2.  Cards less overdue (by proportion of interval)
+2.  Review cards overdue for review
+    1.  Cards more overdue (by proportion of interval)
+    2.  Cards less overdue (by proportion of interval)
+3.  Learning cards overdue for review
+    1.  Cards more overdue (by proportion of interval)
+    2.  Cards less overdue (by proportion of interval)
+4.  Any new cards in the deck (never having been studied before).
+
+`getDueCardIndicesWithDetails` will show cards up to 20 minutes early, as per Anki.
+
+-}
+getDueCardIndicesWithDetails :
+    Time.Posix
+    -> Deck a b
+    -> List { index : Int, isLeech : Bool, queueDetails : QueueDetails }
+getDueCardIndicesWithDetails time deck =
+    Array.toIndexedList deck.cards
+        |> List.filter
+            (isDue deck.settings time << Tuple.second)
+        |> List.sortWith
+            (\( _, c1 ) ( _, c2 ) -> compareDue deck.settings time c1 c2)
+        |> ListX.reverseMap
+            (\( index, card ) ->
+                { index = index
+                , isLeech = isLeech deck.settings card
+                , queueDetails = getQueueDetails deck.settings card
+                }
+            )
+
+
+{-| `QueueDetails` represents the current status of a card.
+
+  - `NewCard` -- A card that has never before been studied (encountered) by the user.
+
+  - `LearningQueue {...}` -- A card that is in the initial learning queue, progressing through the steps specified in `AnkiSettings.newSteps`.
+      - `lastReviewed : Time.Posix` -- The date and time the card was last reviewed.
+      - `intervalInMinutes : Int` -- The interval, in minutes from the date last seen, that the card is slated for review in.
+
+  - `ReviewQueue {...}` -- A card that is being reviewed for retention.
+      - `lastReviewed : Time.Posix` -- The date and time the card was last reviewed.
+      - `intervalInDays : Int` -- The interval, in days from the date last seen, that the card was slated for review in.
+      - `lapses : Int` -- The number of times the card has "lapsed," i.e. been forgotten/incorrectly answered by the user.
+
+  - `LapsedQueue {...}` -- A card that has lapsed, i.e. one that was being reviewed but was answered incorrectly and is now being re-learned.
+      - `lastReviewed : Time.Posix` -- The date and time the card was last reviewed.
+      - `formerIntervalInDays : Int` -- The interval, in days from the date last seen, that the card was slated for review in prior to last being forgotten/ answered incorrectly.
+      - `intervalInMinutes : Int` -- The interval, in minutes from the date last seen, that the card is slated for review in.
+      - `lapses : Int` -- The number of times the card has "lapsed," i.e. been forgotten/incorrectly answered by the user.
+
+-}
+type QueueDetails
+    = NewCard
+    | LearningQueue
+        { lastReviewed : Time.Posix
+        , intervalInMinutes : Int
+        }
+    | ReviewQueue
+        { lastReviewed : Time.Posix
+        , intervalInDays : Int
+        , lapses : Int
+        }
+    | LapsedQueue
+        { lastReviewed : Time.Posix
+        , formerIntervalInDays : Int
+        , intervalInMinutes : Int
+        , lapses : Int
+        }
+
+
+{-| `getCardDetails` returns the current queue status for a given card and whether or not it is a leech. If you require this for every due card, simply use `getDueCardIndicesWithDetails`.
+-}
+getCardDetails : AnkiSettings -> Card a -> { isLeech : Bool, queueDetails : QueueDetails }
+getCardDetails s c =
+    { isLeech = isLeech s c, queueDetails = getQueueDetails s c }
+
+
+
+-- * Non-exposed only below here
+
+
+{-| `getLeeches` takes a `Deck` and returns the indices of the subset of the `Deck` that are leeches (as `List Int`). The returned indices will be sorted in the following order:
+
+1.  Cards with more lapses
+2.  Cards with fewer lapses
+
+-}
+getLeeches : Deck a b -> List Int
+getLeeches deck =
+    Array.toIndexedList deck.cards
+        |> List.filter (isLeech deck.settings << Tuple.second)
+        |> List.sortWith
+            (\( _, c1 ) ( _, c2 ) -> compare (numberOfLapses c1) (numberOfLapses c2))
+        |> ListX.reverseMap Tuple.first
+
+
+{-| Opaque type. You don't need it, except maybe in type signatures.
+-}
+type alias Ease =
+    SpacedRepetition.Internal.SMTwoAnki.Ease
+
+
+{-| Opaque type. You don't need it, except maybe in type signatures.
+-}
+type alias TimeInterval a =
+    SpacedRepetition.Internal.SMTwoAnki.TimeInterval a
+
+
+{-| Opaque type. You don't need it, except maybe in type signatures.
+-}
+type alias Days =
+    SpacedRepetition.Internal.SMTwoAnki.Days
+
+
+{-| Opaque type. You don't need it, except maybe in type signatures.
+-}
+type alias Minutes =
+    SpacedRepetition.Internal.SMTwoAnki.Minutes
+
+
+{-| Opaque type. You don't need it, except maybe in type signatures.
+-}
+type alias Natural =
+    Natural.Natural
+
+
+{-| Compare the "due"-ness of two cards at a given time.
+-}
+compareDue : AnkiSettings -> Time.Posix -> Card a -> Card a -> Order
+compareDue settings time c1 c2 =
+    case ( c1.srsData, c2.srsData ) of
+        ( New, New ) ->
+            EQ
+
+        ( New, _ ) ->
+            LT
+
+        ( _, New ) ->
+            GT
+
+        ( Learning _, Learning _ ) ->
+            let
+                ( overdueAmt1, _ ) =
+                    overdueAmount settings time c1
+
+                ( overdueAmt2, _ ) =
+                    overdueAmount settings time c2
+            in
+            compare overdueAmt1 overdueAmt2
+
+        ( Learning _, _ ) ->
+            LT
+
+        ( _, Learning _ ) ->
+            GT
+
+        ( Review _, Review _ ) ->
+            let
+                ( overdueAmt1, _ ) =
+                    overdueAmount settings time c1
+
+                ( overdueAmt2, _ ) =
+                    overdueAmount settings time c2
+            in
+            compare overdueAmt1 overdueAmt2
+
+        ( Review _, _ ) ->
+            LT
+
+        ( _, Review _ ) ->
+            GT
+
+        ( Lapsed _, Lapsed _ ) ->
+            let
+                ( overdueAmt1, _ ) =
+                    overdueAmount settings time c1
+
+                ( overdueAmt2, _ ) =
+                    overdueAmount settings time c2
+            in
+            compare overdueAmt1 overdueAmt2
+
+
+{-| Return the currently-scheduled inter-review interval of a card in minutes.
+-}
+getCurrentIntervalInMinutes : AnkiSettings -> Card a -> Int
+getCurrentIntervalInMinutes settings { srsData } =
+    case srsData of
+        Lapsed { step } ->
+            ListX.getAt (Natural.toInt step) settings.lapseSteps
+                |> Maybe.map timeIntervalToMinutes
+                -- If there are no steps, the card should immediately be due.
+                |> Maybe.withDefault 1
+
+        Learning { step } ->
+            ListX.getAt (Natural.toInt step) settings.newSteps
+                |> Maybe.map timeIntervalToMinutes
+                -- If there are no steps, the card should immediately be due.
+                |> Maybe.withDefault 1
+
+        New ->
+            0
+
+        Review { interval } ->
+            timeIntervalToMinutes interval
+
+
+{-| Given a card, return its review status.
+-}
+getQueueDetails : AnkiSettings -> Card a -> QueueDetails
+getQueueDetails s c =
+    case c.srsData of
+        Lapsed { lapses, lastReviewed, oldInterval } ->
+            LapsedQueue
+                { formerIntervalInDays = timeIntervalToDays oldInterval
+                , intervalInMinutes = getCurrentIntervalInMinutes s c
+                , lapses = Natural.toInt lapses
+                , lastReviewed = lastReviewed
+                }
+
+        Learning { lastReviewed } ->
+            LearningQueue
+                { intervalInMinutes = getCurrentIntervalInMinutes s c
+                , lastReviewed = lastReviewed
+                }
+
+        New ->
+            NewCard
+
+        Review { interval, lapses, lastReviewed } ->
+            ReviewQueue
+                { intervalInDays = timeIntervalToDays interval
+                , lapses = Natural.toInt lapses
+                , lastReviewed = lastReviewed
+                }
+
+
+{-| Check if a card is currently due to be studied.
+-}
+isDue : AnkiSettings -> Time.Posix -> Card a -> Bool
+isDue settings time card =
+    case card.srsData of
+        New ->
+            True
+
+        _ ->
+            let
+                ( _, minutesOverdue ) =
+                    overdueAmount settings time card
+            in
+            minutesOverdue >= -20
+
+
+{-| Get whether or not a card is a "leech."
+-}
+isLeech : AnkiSettings -> Card a -> Bool
+isLeech settings card =
+    if settings.leechThreshold == Natural.nil then
+        False
+
+    else
+        numberOfLapses card >= Natural.toInt settings.leechThreshold
+
+
+{-| Get the number of times a card has been forgotten from a card.
+-}
+numberOfLapses : Card a -> Int
+numberOfLapses card =
+    case card.srsData of
+        Lapsed { lapses } ->
+            Natural.toInt lapses
+
+        Review { lapses } ->
+            Natural.toInt lapses
+
+        _ ->
+            0
+
+
+{-| Given settings and the current time, determine what proportion overdue a
+card is, i.e. `0.9` is 90% of the way to being overdue and `2` is the interval again overdue, and also the absolute number of minutes overdue.
+-}
+overdueAmount : AnkiSettings -> Time.Posix -> Card a -> ( Float, Int )
+overdueAmount settings time card =
+    case card.srsData of
+        New ->
+            ( 1.0, 0 )
+
+        _ ->
+            let
+                reviewed : Time.Posix
+                reviewed =
+                    case card.srsData of
+                        Lapsed { lastReviewed } ->
+                            lastReviewed
+
+                        Learning { lastReviewed } ->
+                            lastReviewed
+
+                        New ->
+                            Time.millisToPosix 0
+
+                        Review { lastReviewed } ->
+                            lastReviewed
+
+                interval : Int
+                interval =
+                    getCurrentIntervalInMinutes settings card
+
+                minutesOverdue : Int
+                minutesOverdue =
+                    diff Minute Time.utc reviewed time - interval
+            in
+            -- (Relative Amount Overdue, Absolute Minutes Overdue)
+            ( toFloat minutesOverdue / toFloat interval, minutesOverdue )

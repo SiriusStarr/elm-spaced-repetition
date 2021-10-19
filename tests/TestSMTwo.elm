@@ -50,231 +50,6 @@ import Time.Extra exposing (Interval(..), diff)
 import Util exposing (boundedLessThan, fuzzTime)
 
 
-{-| Fuzz an EFactor (ease)
--}
-fuzzEFactor : Fuzzer EFactor
-fuzzEFactor =
-    Fuzz.map eFactor (floatRange 0 1000)
-
-
-{-| Fuzz a streak
--}
-fuzzStreak : Fuzzer Streak
-fuzzStreak =
-    Fuzz.oneOf
-        [ Fuzz.constant Zero
-        , Fuzz.constant One
-        , intRange 6 Random.maxInt
-            |> Fuzz.map
-                (Natural.fromInt
-                    >> Maybe.withDefault Natural.nil
-                    >> (\interval -> TwoPlus { interval = interval })
-                )
-        ]
-
-
-{-| Fuzz a review history.
--}
-fuzzSRSData : Fuzzer SRSData
-fuzzSRSData =
-    Fuzz.oneOf
-        [ Fuzz.constant New
-        , Fuzz.map3
-            (\ease lastReviewed streak ->
-                Reviewed
-                    { ease = ease
-                    , lastReviewed = lastReviewed
-                    , streak = streak
-                    }
-            )
-            fuzzEFactor
-            fuzzTime
-            fuzzStreak
-        , Fuzz.map2 (\ease streak -> Repeating { ease = ease, streak = streak })
-            fuzzEFactor
-            fuzzStreak
-        ]
-
-
-{-| Fuzz a card.
--}
-fuzzCard : Fuzzer { srsData : SRSData }
-fuzzCard =
-    Fuzz.map (\d -> { srsData = d }) fuzzSRSData
-
-
-{-| Fuzz a deck of cards.
--}
-fuzzDeck : Fuzzer (Array { srsData : SRSData })
-fuzzDeck =
-    Fuzz.array fuzzCard
-
-
-{-| Fuzz a card with extra fields.
--}
-fuzzExtendedCard : Fuzzer { srsData : SRSData, unrelatedField : Int }
-fuzzExtendedCard =
-    Fuzz.map2 (\d i -> { srsData = d, unrelatedField = i }) fuzzSRSData int
-
-
-{-| Fuzz an answer quality.
--}
-fuzzAnswer : Fuzzer Answer
-fuzzAnswer =
-    Fuzz.oneOf
-        [ Fuzz.constant Perfect
-        , Fuzz.constant
-            CorrectWithHesitation
-        , Fuzz.constant
-            CorrectWithDifficulty
-        , Fuzz.constant
-            IncorrectButRemembered
-        , Fuzz.constant
-            IncorrectButFamiliar
-        , Fuzz.constant
-            NoRecollection
-        ]
-
-
-{-| Get the ease of a card.
--}
-eFactorFromCard : Card a -> Float
-eFactorFromCard c =
-    case c.srsData of
-        New ->
-            2.5
-
-        Repeating { ease } ->
-            eFactorToFloat ease
-
-        Reviewed { ease } ->
-            eFactorToFloat ease
-
-
-{-| Get the streak of a card.
--}
-streakFromCard : Card a -> Maybe Streak
-streakFromCard c =
-    case c.srsData of
-        New ->
-            Nothing
-
-        Repeating { streak } ->
-            Just streak
-
-        Reviewed { streak } ->
-            Just streak
-
-
-{-| Predicate to check if a card is new.
--}
-isNew : Card a -> Bool
-isNew { srsData } =
-    case srsData of
-        New ->
-            True
-
-        _ ->
-            False
-
-
-{-| Predicate to check if a card is being reviewed.
--}
-isReviewed : Card a -> Bool
-isReviewed { srsData } =
-    case srsData of
-        Reviewed _ ->
-            True
-
-        _ ->
-            False
-
-
-{-| Predicate to check if a card is being repeated.
--}
-isRepeating : Card a -> Bool
-isRepeating { srsData } =
-    case srsData of
-        Repeating _ ->
-            True
-
-        _ ->
-            False
-
-
-{-| Convert an Answer to a comparable.
--}
-answerToInt : Answer -> Int
-answerToInt ans =
-    case ans of
-        CorrectWithDifficulty ->
-            3
-
-        CorrectWithHesitation ->
-            4
-
-        IncorrectButFamiliar ->
-            1
-
-        IncorrectButRemembered ->
-            2
-
-        NoRecollection ->
-            0
-
-        Perfect ->
-            5
-
-
-{-| Expect a new streak to be incremented (and have a longer interval).
--}
-expectLonger : Streak -> Streak -> Expectation
-expectLonger oldStreak newStreak =
-    case ( oldStreak, newStreak ) of
-        ( _, Zero ) ->
-            Expect.fail "Answered card interval was not incremented."
-
-        ( Zero, One ) ->
-            Expect.pass
-
-        ( Zero, TwoPlus _ ) ->
-            Expect.fail "Answered card was over-incremented."
-
-        ( One, One ) ->
-            Expect.fail "Answered card interval was not incremented."
-
-        ( TwoPlus _, One ) ->
-            Expect.fail "Answered card was decremented instead of incremented."
-
-        ( One, TwoPlus _ ) ->
-            Expect.pass
-
-        ( TwoPlus old, TwoPlus new ) ->
-            Expect.greaterThan (Natural.toInt old.interval)
-                (Natural.toInt new.interval)
-
-
-{-| Test JSON encoding/decoding.
--}
-suiteJson : Test
-suiteJson =
-    describe "Json encoding/decoding"
-        [ describe "Encode should always be able to be decoded"
-            [ fuzz fuzzSRSData "Encode SRSData to string" <|
-                \d ->
-                    Encode.encode 0
-                        (Encode.object [ ( "srsData", encoderSRSData d ) ])
-                        |> Decode.decodeString (Decode.field "srsData" decoderSRSData)
-                        |> Expect.equal (Ok d)
-            , fuzz fuzzSRSData "Encode SRSData to value" <|
-                \d ->
-                    encoderSRSData d
-                        |> Decode.decodeValue decoderSRSData
-                        |> Expect.equal (Ok d)
-            ]
-        ]
-
-
 {-| Test `answerCard`.
 -}
 suiteAnswerCard : Test
@@ -406,6 +181,107 @@ suiteAnswerCard =
                     |> .unrelatedField
                     |> Expect.equal card.unrelatedField
         ]
+
+
+{-| Convert an Answer to a comparable.
+-}
+answerToInt : Answer -> Int
+answerToInt ans =
+    case ans of
+        CorrectWithDifficulty ->
+            3
+
+        CorrectWithHesitation ->
+            4
+
+        IncorrectButFamiliar ->
+            1
+
+        IncorrectButRemembered ->
+            2
+
+        NoRecollection ->
+            0
+
+        Perfect ->
+            5
+
+
+{-| Get the ease of a card.
+-}
+eFactorFromCard : Card a -> Float
+eFactorFromCard c =
+    case c.srsData of
+        New ->
+            2.5
+
+        Repeating { ease } ->
+            eFactorToFloat ease
+
+        Reviewed { ease } ->
+            eFactorToFloat ease
+
+
+{-| Expect a new streak to be incremented (and have a longer interval).
+-}
+expectLonger : Streak -> Streak -> Expectation
+expectLonger oldStreak newStreak =
+    case ( oldStreak, newStreak ) of
+        ( _, Zero ) ->
+            Expect.fail "Answered card interval was not incremented."
+
+        ( Zero, One ) ->
+            Expect.pass
+
+        ( Zero, TwoPlus _ ) ->
+            Expect.fail "Answered card was over-incremented."
+
+        ( One, One ) ->
+            Expect.fail "Answered card interval was not incremented."
+
+        ( TwoPlus _, One ) ->
+            Expect.fail "Answered card was decremented instead of incremented."
+
+        ( One, TwoPlus _ ) ->
+            Expect.pass
+
+        ( TwoPlus old, TwoPlus new ) ->
+            Expect.greaterThan (Natural.toInt old.interval)
+                (Natural.toInt new.interval)
+
+
+{-| Fuzz a card with extra fields.
+-}
+fuzzExtendedCard : Fuzzer { srsData : SRSData, unrelatedField : Int }
+fuzzExtendedCard =
+    Fuzz.map2 (\d i -> { srsData = d, unrelatedField = i }) fuzzSRSData int
+
+
+{-| Predicate to check if a card is being reviewed.
+-}
+isReviewed : Card a -> Bool
+isReviewed { srsData } =
+    case srsData of
+        Reviewed _ ->
+            True
+
+        _ ->
+            False
+
+
+{-| Get the streak of a card.
+-}
+streakFromCard : Card a -> Maybe Streak
+streakFromCard c =
+    case c.srsData of
+        New ->
+            Nothing
+
+        Repeating { streak } ->
+            Just streak
+
+        Reviewed { streak } ->
+            Just streak
 
 
 {-| Test `answerCardInDeck`.
@@ -578,6 +454,18 @@ suiteGetDueCardIndices =
         ]
 
 
+{-| Predicate to check if a card is new.
+-}
+isNew : Card a -> Bool
+isNew { srsData } =
+    case srsData of
+        New ->
+            True
+
+        _ ->
+            False
+
+
 {-| Test `getDueCardIndicesWithDetails`.
 -}
 suiteGetDueCardIndicesWithDetails : Test
@@ -615,3 +503,115 @@ suiteGetDueCardIndicesWithDetails =
                     |> List.map .index
                     |> Expect.equalLists (getDueCardIndices time deck)
         ]
+
+
+{-| Test JSON encoding/decoding.
+-}
+suiteJson : Test
+suiteJson =
+    describe "Json encoding/decoding"
+        [ describe "Encode should always be able to be decoded"
+            [ fuzz fuzzSRSData "Encode SRSData to string" <|
+                \d ->
+                    Encode.encode 0
+                        (Encode.object [ ( "srsData", encoderSRSData d ) ])
+                        |> Decode.decodeString (Decode.field "srsData" decoderSRSData)
+                        |> Expect.equal (Ok d)
+            , fuzz fuzzSRSData "Encode SRSData to value" <|
+                \d ->
+                    encoderSRSData d
+                        |> Decode.decodeValue decoderSRSData
+                        |> Expect.equal (Ok d)
+            ]
+        ]
+
+
+{-| Fuzz an answer quality.
+-}
+fuzzAnswer : Fuzzer Answer
+fuzzAnswer =
+    Fuzz.oneOf
+        [ Fuzz.constant Perfect
+        , Fuzz.constant
+            CorrectWithHesitation
+        , Fuzz.constant
+            CorrectWithDifficulty
+        , Fuzz.constant
+            IncorrectButRemembered
+        , Fuzz.constant
+            IncorrectButFamiliar
+        , Fuzz.constant
+            NoRecollection
+        ]
+
+
+{-| Fuzz a card.
+-}
+fuzzCard : Fuzzer { srsData : SRSData }
+fuzzCard =
+    Fuzz.map (\d -> { srsData = d }) fuzzSRSData
+
+
+{-| Fuzz a deck of cards.
+-}
+fuzzDeck : Fuzzer (Array { srsData : SRSData })
+fuzzDeck =
+    Fuzz.array fuzzCard
+
+
+{-| Fuzz a review history.
+-}
+fuzzSRSData : Fuzzer SRSData
+fuzzSRSData =
+    Fuzz.oneOf
+        [ Fuzz.constant New
+        , Fuzz.map3
+            (\ease lastReviewed streak ->
+                Reviewed
+                    { ease = ease
+                    , lastReviewed = lastReviewed
+                    , streak = streak
+                    }
+            )
+            fuzzEFactor
+            fuzzTime
+            fuzzStreak
+        , Fuzz.map2 (\ease streak -> Repeating { ease = ease, streak = streak })
+            fuzzEFactor
+            fuzzStreak
+        ]
+
+
+{-| Fuzz an EFactor (ease)
+-}
+fuzzEFactor : Fuzzer EFactor
+fuzzEFactor =
+    Fuzz.map eFactor (floatRange 0 1000)
+
+
+{-| Fuzz a streak
+-}
+fuzzStreak : Fuzzer Streak
+fuzzStreak =
+    Fuzz.oneOf
+        [ Fuzz.constant Zero
+        , Fuzz.constant One
+        , intRange 6 Random.maxInt
+            |> Fuzz.map
+                (Natural.fromInt
+                    >> Maybe.withDefault Natural.nil
+                    >> (\interval -> TwoPlus { interval = interval })
+                )
+        ]
+
+
+{-| Predicate to check if a card is being repeated.
+-}
+isRepeating : Card a -> Bool
+isRepeating { srsData } =
+    case srsData of
+        Repeating _ ->
+            True
+
+        _ ->
+            False

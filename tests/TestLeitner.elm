@@ -48,144 +48,6 @@ import Time.Extra exposing (Interval(..), diff)
 import Util exposing (fuzzNatural, fuzzTime)
 
 
-{-| Fuzz `OnIncorrect` behavior.
--}
-fuzzOnIncorrect : Fuzzer OnIncorrect
-fuzzOnIncorrect =
-    Fuzz.oneOf
-        [ Fuzz.constant BackOneBox
-        , Fuzz.constant BackToStart
-        ]
-
-
-{-| Fuzz a `SpacingFunction`.
--}
-fuzzSpacing : Fuzzer SpacingFunction
-fuzzSpacing =
-    Fuzz.oneOf
-        [ Fuzz.constant fibonacciSpacing
-        , Fuzz.constant doubleSpacing
-        , Fuzz.constant alternateSpacingFunction
-        ]
-
-
-{-| A stand-in for a user-provided spacing function.
--}
-alternateSpacingFunction : SpacingFunction
-alternateSpacingFunction i =
-    i + 1
-
-
-{-| Fuzz the number of boxes in the system.
--}
-fuzzNumBoxes : Fuzzer NumberOfBoxes
-fuzzNumBoxes =
-    Fuzz.map numberOfBoxes <| intRange -1 Random.maxInt
-
-
-{-| Fuzz `LeitnerSettings`.
--}
-fuzzSettings : Fuzzer LeitnerSettings
-fuzzSettings =
-    Fuzz.map3
-        (\boxSpacing numBoxes onIncorrect ->
-            { boxSpacing = boxSpacing
-            , numBoxes = numBoxes
-            , onIncorrect = onIncorrect
-            }
-        )
-        fuzzSpacing
-        fuzzNumBoxes
-        fuzzOnIncorrect
-
-
-{-| Fuzz data for a card.
--}
-fuzzSRSData : Fuzzer SRSData
-fuzzSRSData =
-    Fuzz.oneOf
-        [ Fuzz.constant New
-        , Fuzz.map2
-            (\box lastReviewed ->
-                BoxN
-                    { box = box
-                    , lastReviewed = lastReviewed
-                    }
-            )
-            fuzzNatural
-            fuzzTime
-        , Fuzz.constant Graduated
-        ]
-
-
-{-| Fuzz a `SRSData` for a card.
--}
-fuzzCard : Fuzzer { srsData : SRSData }
-fuzzCard =
-    Fuzz.map (\d -> { srsData = d }) fuzzSRSData
-
-
-{-| Fuzz a `SRSData` for a card with other fields.
--}
-fuzzExtendedCard : Fuzzer { srsData : SRSData, unrelatedField : Int }
-fuzzExtendedCard =
-    Fuzz.map2 (\d i -> { srsData = d, unrelatedField = i }) fuzzSRSData int
-
-
-{-| Fuzz a `Deck` of cards.
--}
-fuzzDeck :
-    Fuzzer
-        { cards : Array { srsData : SRSData }
-        , settings : LeitnerSettings
-        }
-fuzzDeck =
-    Fuzz.map2 (\c s -> { cards = c, settings = s })
-        (Fuzz.array fuzzCard)
-        fuzzSettings
-
-
-{-| Fuzz a review answer.
--}
-fuzzAnswer : Fuzzer Answer
-fuzzAnswer =
-    Fuzz.oneOf
-        [ Fuzz.constant Correct
-        , Fuzz.constant Incorrect
-        , Fuzz.constant Pass
-        , Fuzz.map MoveBoxes int
-        , Fuzz.constant BackToFirstBox
-        ]
-
-
-{-| Fuzz a full user response, with settings, time, and answer.
--}
-fuzzResponse : Fuzzer ( Time.Posix, Answer, LeitnerSettings )
-fuzzResponse =
-    Fuzz.map3 (\t a s -> ( t, a, s )) fuzzTime fuzzAnswer fuzzSettings
-
-
-{-| Tests for Json encoding/decoding.
--}
-suiteJson : Test
-suiteJson =
-    describe "Json encoding/decoding"
-        [ describe "Encode should always be able to be decoded"
-            [ fuzz fuzzSRSData "Encode SRSData to string" <|
-                \d ->
-                    Encode.encode 0
-                        (Encode.object [ ( "srsData", encoderSRSData d ) ])
-                        |> Decode.decodeString (Decode.field "srsData" decoderSRSData)
-                        |> Expect.equal (Ok d)
-            , fuzz fuzzSRSData "Encode SRSData to value" <|
-                \d ->
-                    encoderSRSData d
-                        |> Decode.decodeValue decoderSRSData
-                        |> Expect.equal (Ok d)
-            ]
-        ]
-
-
 {-| Tests for `answerCard`.
 -}
 suiteAnswerCard : Test
@@ -302,6 +164,20 @@ suiteAnswerCard =
                     |> .unrelatedField
                     |> Expect.equal card.unrelatedField
         ]
+
+
+{-| Fuzz a `SRSData` for a card with other fields.
+-}
+fuzzExtendedCard : Fuzzer { srsData : SRSData, unrelatedField : Int }
+fuzzExtendedCard =
+    Fuzz.map2 (\d i -> { srsData = d, unrelatedField = i }) fuzzSRSData int
+
+
+{-| Fuzz a full user response, with settings, time, and answer.
+-}
+fuzzResponse : Fuzzer ( Time.Posix, Answer, LeitnerSettings )
+fuzzResponse =
+    Fuzz.map3 (\t a s -> ( t, a, s )) fuzzTime fuzzAnswer fuzzSettings
 
 
 {-| Tests for `answerCardInDeck`.
@@ -511,3 +387,127 @@ suiteGetDueCardIndicesWithDetails =
                     |> List.map .index
                     |> Expect.equalLists (getDueCardIndices time deck)
         ]
+
+
+{-| Tests for Json encoding/decoding.
+-}
+suiteJson : Test
+suiteJson =
+    describe "Json encoding/decoding"
+        [ describe "Encode should always be able to be decoded"
+            [ fuzz fuzzSRSData "Encode SRSData to string" <|
+                \d ->
+                    Encode.encode 0
+                        (Encode.object [ ( "srsData", encoderSRSData d ) ])
+                        |> Decode.decodeString (Decode.field "srsData" decoderSRSData)
+                        |> Expect.equal (Ok d)
+            , fuzz fuzzSRSData "Encode SRSData to value" <|
+                \d ->
+                    encoderSRSData d
+                        |> Decode.decodeValue decoderSRSData
+                        |> Expect.equal (Ok d)
+            ]
+        ]
+
+
+{-| Fuzz a review answer.
+-}
+fuzzAnswer : Fuzzer Answer
+fuzzAnswer =
+    Fuzz.oneOf
+        [ Fuzz.constant Correct
+        , Fuzz.constant Incorrect
+        , Fuzz.constant Pass
+        , Fuzz.map MoveBoxes int
+        , Fuzz.constant BackToFirstBox
+        ]
+
+
+{-| Fuzz a `SRSData` for a card.
+-}
+fuzzCard : Fuzzer { srsData : SRSData }
+fuzzCard =
+    Fuzz.map (\d -> { srsData = d }) fuzzSRSData
+
+
+{-| Fuzz a `Deck` of cards.
+-}
+fuzzDeck :
+    Fuzzer
+        { cards : Array { srsData : SRSData }
+        , settings : LeitnerSettings
+        }
+fuzzDeck =
+    Fuzz.map2 (\c s -> { cards = c, settings = s })
+        (Fuzz.array fuzzCard)
+        fuzzSettings
+
+
+{-| Fuzz data for a card.
+-}
+fuzzSRSData : Fuzzer SRSData
+fuzzSRSData =
+    Fuzz.oneOf
+        [ Fuzz.constant New
+        , Fuzz.map2
+            (\box lastReviewed ->
+                BoxN
+                    { box = box
+                    , lastReviewed = lastReviewed
+                    }
+            )
+            fuzzNatural
+            fuzzTime
+        , Fuzz.constant Graduated
+        ]
+
+
+{-| Fuzz `LeitnerSettings`.
+-}
+fuzzSettings : Fuzzer LeitnerSettings
+fuzzSettings =
+    Fuzz.map3
+        (\boxSpacing numBoxes onIncorrect ->
+            { boxSpacing = boxSpacing
+            , numBoxes = numBoxes
+            , onIncorrect = onIncorrect
+            }
+        )
+        fuzzSpacing
+        fuzzNumBoxes
+        fuzzOnIncorrect
+
+
+{-| Fuzz the number of boxes in the system.
+-}
+fuzzNumBoxes : Fuzzer NumberOfBoxes
+fuzzNumBoxes =
+    Fuzz.map numberOfBoxes <| intRange -1 Random.maxInt
+
+
+{-| Fuzz `OnIncorrect` behavior.
+-}
+fuzzOnIncorrect : Fuzzer OnIncorrect
+fuzzOnIncorrect =
+    Fuzz.oneOf
+        [ Fuzz.constant BackOneBox
+        , Fuzz.constant BackToStart
+        ]
+
+
+{-| Fuzz a `SpacingFunction`.
+-}
+fuzzSpacing : Fuzzer SpacingFunction
+fuzzSpacing =
+    Fuzz.oneOf
+        [ Fuzz.constant fibonacciSpacing
+        , Fuzz.constant doubleSpacing
+        , Fuzz.constant alternateSpacingFunction
+        ]
+
+
+{-| A stand-in for a user-provided spacing function.
+-}
+alternateSpacingFunction : SpacingFunction
+alternateSpacingFunction i =
+    i + 1

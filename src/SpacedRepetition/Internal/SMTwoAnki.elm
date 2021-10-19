@@ -27,12 +27,6 @@ import SpacedRepetition.Internal.Natural exposing (Natural)
 import Time
 
 
-{-| Phantom type for a `TimeInterval` in minutes.
--}
-type Minutes
-    = Minutes Never
-
-
 {-| Phantom type for a `TimeInterval` consisting of a round number of days.
 -}
 type Days
@@ -45,12 +39,10 @@ type Ease
     = Ease Float
 
 
-{-| A type for a positive, non-zero duration of time (stored internally in
-minutes). Uses the phantom types `Minutes` and `Days` to limit time intervals to
-a round number of a duration.
+{-| Phantom type for a `TimeInterval` in minutes.
 -}
-type TimeInterval a
-    = TimeInterval Int -- In minutes
+type Minutes
+    = Minutes Never
 
 
 {-| The status of a card:
@@ -82,60 +74,16 @@ type QueueStatus
         }
 
 
-{-| Convert a `Float` into an `Ease`, ensuring it is at least 1.3.
+
+-- In minutes
+
+
+{-| A type for a positive, non-zero duration of time (stored internally in
+minutes). Uses the phantom types `Minutes` and `Days` to limit time intervals to
+a round number of a duration.
 -}
-createEase : Float -> Ease
-createEase f =
-    Ease <| max 1.3 f
-
-
-{-| Unpack an `Ease` into a `Float`.
--}
-easeToFloat : Ease -> Float
-easeToFloat (Ease f) =
-    f
-
-
-{-| Adjust an `Ease` by an amount.
--}
-adjustEase : Float -> Ease -> Ease
-adjustEase amt (Ease f) =
-    createEase <| f + amt
-
-
-{-| Decode an `Ease` from JSON, ensuring it is at least 1.3.
--}
-decodeEase : Decoder Ease
-decodeEase =
-    Decode.map createEase Decode.float
-
-
-{-| Encode an `Ease` to JSON.
--}
-encodeEase : Ease -> Encode.Value
-encodeEase e =
-    Encode.float <| easeToFloat e
-
-
-{-| Unpack a `TimeInterval` as minutes.
--}
-timeIntervalToMinutes : TimeInterval a -> Int
-timeIntervalToMinutes (TimeInterval i) =
-    i
-
-
-{-| Unpack a `TimeInterval` as days.
--}
-timeIntervalToDays : TimeInterval Days -> Int
-timeIntervalToDays (TimeInterval i) =
-    i // 1440
-
-
-{-| Convert a number of minutes to a round, positive number of days.
--}
-minutesToDayInterval : Int -> TimeInterval Days
-minutesToDayInterval i =
-    TimeInterval << max 1440 <| 1440 * (i // 1440)
+type TimeInterval a
+    = TimeInterval Int
 
 
 {-| Increment an interval in days by one day.
@@ -145,6 +93,65 @@ addDay (TimeInterval i) =
     TimeInterval <| i + 1440
 
 
+{-| Adjust an `Ease` by an amount.
+-}
+adjustEase : Float -> Ease -> Ease
+adjustEase amt (Ease f) =
+    createEase <| f + amt
+
+
+{-| Convert a `Float` into an `Ease`, ensuring it is at least 1.3.
+-}
+createEase : Float -> Ease
+createEase f =
+    Ease <| max 1.3 f
+
+
+{-| Decode a `TimeInterval` in days from JSON (where it has been stored as
+minutes).
+-}
+decodeDayInterval : Decoder (TimeInterval Days)
+decodeDayInterval =
+    Decode.map minutesToDayInterval Decode.int
+
+
+{-| Decode an `Ease` from JSON, ensuring it is at least 1.3.
+-}
+decodeEase : Decoder Ease
+decodeEase =
+    Decode.map createEase Decode.float
+
+
+{-| Unpack an `Ease` into a `Float`.
+-}
+easeToFloat : Ease -> Float
+easeToFloat (Ease f) =
+    f
+
+
+{-| Encode a `TimeInterval` in days to JSON (where it will be stored as
+minutes).
+-}
+encodeDayInterval : TimeInterval Days -> Encode.Value
+encodeDayInterval interval =
+    Encode.int <| timeIntervalToMinutes interval
+
+
+{-| Encode an `Ease` to JSON.
+-}
+encodeEase : Ease -> Encode.Value
+encodeEase e =
+    Encode.float <| easeToFloat e
+
+
+{-| Encode a `TimeInterval` in minutes to JSON (where it will be stored as
+minutes).
+-}
+encodeMinuteInterval : TimeInterval Minutes -> Encode.Value
+encodeMinuteInterval interval =
+    Encode.int <| timeIntervalToMinutes interval
+
+
 {-| Get the lesser of two intervals.
 -}
 minInterval : TimeInterval a -> TimeInterval a -> TimeInterval a
@@ -152,13 +159,11 @@ minInterval (TimeInterval i) (TimeInterval j) =
     TimeInterval <| min i j
 
 
-{-| Convert a number of minutes to a `TimeInterval`, ensuring it is at least 1
-and not over MaxInt.
+{-| Convert a number of minutes to a round, positive number of days.
 -}
-timeIntervalFromMinutes : Int -> TimeInterval Minutes
-timeIntervalFromMinutes i =
-    -- This magic number is max int; truncate does not play well with larger values.
-    TimeInterval <| clamp 1 2147483647 i
+minutesToDayInterval : Int -> TimeInterval Days
+minutesToDayInterval i =
+    TimeInterval << max 1440 <| 1440 * (i // 1440)
 
 
 {-| Convert a number of days to a `TimeInterval`, ensuring it is at least 1 day
@@ -170,25 +175,24 @@ timeIntervalFromDays i =
     TimeInterval << clamp 1440 2147483647 <| i * 1440
 
 
-{-| Decode a `TimeInterval` in days from JSON (where it has been stored as
-minutes).
+{-| Convert a number of minutes to a `TimeInterval`, ensuring it is at least 1
+and not over MaxInt.
 -}
-decodeDayInterval : Decoder (TimeInterval Days)
-decodeDayInterval =
-    Decode.map minutesToDayInterval Decode.int
+timeIntervalFromMinutes : Int -> TimeInterval Minutes
+timeIntervalFromMinutes i =
+    -- This magic number is max int; truncate does not play well with larger values.
+    TimeInterval <| clamp 1 2147483647 i
 
 
-{-| Encode a `TimeInterval` in days to JSON (where it will be stored as
-minutes).
+{-| Unpack a `TimeInterval` as days.
 -}
-encodeDayInterval : TimeInterval Days -> Encode.Value
-encodeDayInterval interval =
-    Encode.int <| timeIntervalToMinutes interval
+timeIntervalToDays : TimeInterval Days -> Int
+timeIntervalToDays (TimeInterval i) =
+    i // 1440
 
 
-{-| Encode a `TimeInterval` in minutes to JSON (where it will be stored as
-minutes).
+{-| Unpack a `TimeInterval` as minutes.
 -}
-encodeMinuteInterval : TimeInterval Minutes -> Encode.Value
-encodeMinuteInterval interval =
-    Encode.int <| timeIntervalToMinutes interval
+timeIntervalToMinutes : TimeInterval a -> Int
+timeIntervalToMinutes (TimeInterval i) =
+    i

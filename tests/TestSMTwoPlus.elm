@@ -50,242 +50,6 @@ import Time.Extra exposing (Interval(..), diff)
 import Util exposing (boundedGreaterThan, boundedLessThan, fuzzTime)
 
 
-{-| Fuzz a difficulty.
--}
-fuzzDifficulty : Fuzzer Difficulty
-fuzzDifficulty =
-    Fuzz.map createDifficulty (floatRange -0.1 1.1)
-
-
-{-| Fuzz a new interval for a card.
--}
-fuzzInterval : Fuzzer SpacedRepetition.Internal.SMTwoPlus.Interval
-fuzzInterval =
-    Fuzz.map createInterval <| floatRange 0 100000
-
-
-{-| Fuzz a review history for a card.
--}
-fuzzSRSData : Fuzzer SRSData
-fuzzSRSData =
-    Fuzz.oneOf
-        [ Fuzz.constant New
-        , Fuzz.map3
-            (\difficulty interval lastReviewed ->
-                Reviewed
-                    { difficulty = difficulty
-                    , interval = interval
-                    , lastReviewed = lastReviewed
-                    }
-            )
-            fuzzDifficulty
-            fuzzInterval
-            fuzzTime
-        ]
-
-
-{-| Fuzz two cards that are identical other than when they were last reviewed.
--}
-fuzzDiffOverdueCards : Fuzzer ( { srsData : SRSData }, { srsData : SRSData } )
-fuzzDiffOverdueCards =
-    Fuzz.map4
-        (\diff t1 t2 interval ->
-            ( { srsData =
-                    Reviewed
-                        { difficulty = diff
-                        , interval = interval
-                        , lastReviewed = t1
-                        }
-              }
-            , { srsData =
-                    Reviewed
-                        { difficulty = diff
-                        , interval = interval
-                        , lastReviewed = t2
-                        }
-              }
-            )
-        )
-        fuzzDifficulty
-        fuzzTime
-        fuzzTime
-        fuzzInterval
-
-
-{-| Fuzz a card.
--}
-fuzzCard : Fuzzer { srsData : SRSData }
-fuzzCard =
-    Fuzz.map (\d -> { srsData = d }) fuzzSRSData
-
-
-{-| Fuzz a deck of cards.
--}
-fuzzDeck : Fuzzer (Array { srsData : SRSData })
-fuzzDeck =
-    Fuzz.array fuzzCard
-
-
-{-| Fuzz an answer quality.
--}
-fuzzPerformance : Fuzzer PerformanceRating
-fuzzPerformance =
-    Fuzz.map performanceRating <| floatRange -0.1 1.1
-
-
-{-| Fuzz a correct answer.
--}
-fuzzCorrectPerformance : Fuzzer PerformanceRating
-fuzzCorrectPerformance =
-    Fuzz.map performanceRating <| floatRange 0.6 1.0
-
-
-{-| Fuzz a card with non-SRS fields.
--}
-fuzzExtendedCard : Fuzzer { srsData : SRSData, unrelatedField : Int }
-fuzzExtendedCard =
-    Fuzz.map2 (\d i -> { srsData = d, unrelatedField = i }) fuzzSRSData int
-
-
-{-| Get the difficulty from a card.
--}
-difficultyFromCard : Card a -> Float
-difficultyFromCard c =
-    case c.srsData of
-        New ->
-            0.3
-
-        Reviewed { difficulty } ->
-            difficultyToFloat difficulty
-
-
-{-| Get the interval from a card.
--}
-intervalFromCard : Card a -> Maybe Float
-intervalFromCard c =
-    case c.srsData of
-        New ->
-            Nothing
-
-        Reviewed { interval } ->
-            Just <| intervalToFloat interval
-
-
-{-| Get the date last reviewed from a card.
--}
-lastReviewedFromCard : Card a -> Maybe Time.Posix
-lastReviewedFromCard c =
-    case c.srsData of
-        New ->
-            Nothing
-
-        Reviewed { lastReviewed } ->
-            Just lastReviewed
-
-
-{-| Get the percent overdue a card is.
--}
-overdueAmountFromCard : Time.Posix -> Card a -> Maybe Float
-overdueAmountFromCard time c =
-    case c.srsData of
-        New ->
-            Nothing
-
-        Reviewed { interval, lastReviewed } ->
-            Just <| overdueAmount time (intervalToFloat interval) lastReviewed
-
-
-{-| Determine how overdue a card is.
--}
-overdueAmount : Time.Posix -> Float -> Time.Posix -> Float
-overdueAmount time interval reviewed =
-    let
-        overdue : Float
-        overdue =
-            toFloat (16 + diff Hour Time.utc reviewed time) / 24 / interval
-    in
-    if diff Hour Time.utc reviewed time <= 8 then
-        min 0.99 overdue
-
-    else
-        overdue
-
-
-{-| Determine whether a card is due.
--}
-isDue : Time.Posix -> Card a -> Bool
-isDue time c =
-    case overdueAmountFromCard time c of
-        Just f ->
-            f >= 1
-
-        Nothing ->
-            True
-
-
-{-| Determine if a card is not even slightly due.
--}
-zeroPercentDue : Time.Posix -> PerformanceRating -> Card a -> Bool
-zeroPercentDue time perf card =
-    case lastReviewedFromCard card of
-        Just date ->
-            if performanceRatingToFloat perf < 0.6 then
-                False
-
-            else
-                diff Hour Time.utc date time <= 0
-
-        Nothing ->
-            False
-
-
-{-| Confirm that a card was scheduled properly.
--}
-confirmCardScheduled : Time.Posix -> PerformanceRating -> Card a -> Card a -> Expectation
-confirmCardScheduled time perf old new =
-    let
-        oldInterval : Float
-        oldInterval =
-            intervalFromCard old
-                |> Maybe.withDefault 0
-
-        newInterval : Float
-        newInterval =
-            intervalFromCard new
-                |> Maybe.withDefault 0
-    in
-    if performanceRatingToFloat perf >= 0.6 then
-        if zeroPercentDue time perf old then
-            Expect.within (Absolute 0.000000001) oldInterval newInterval
-
-        else
-            Expect.greaterThan oldInterval newInterval
-
-    else
-        boundedLessThan 1 oldInterval newInterval
-
-
-{-| Test Json encoding/decoding.
--}
-suiteJson : Test
-suiteJson =
-    describe "Json encoding/decoding"
-        [ describe "Encode should always be able to be decoded"
-            [ fuzz fuzzSRSData "Encode SRSData to string" <|
-                \d ->
-                    Encode.encode 0
-                        (Encode.object [ ( "srsData", encoderSRSData d ) ])
-                        |> Decode.decodeString (Decode.field "srsData" decoderSRSData)
-                        |> Expect.equal (Ok d)
-            , fuzz fuzzSRSData "Encode SRSData to value" <|
-                \d ->
-                    encoderSRSData d
-                        |> Decode.decodeValue decoderSRSData
-                        |> Expect.equal (Ok d)
-            ]
-        ]
-
-
 {-| Test `answerCard`.
 -}
 suiteAnswerCard : Test
@@ -490,6 +254,86 @@ suiteAnswerCard =
         ]
 
 
+{-| Confirm that a card was scheduled properly.
+-}
+confirmCardScheduled : Time.Posix -> PerformanceRating -> Card a -> Card a -> Expectation
+confirmCardScheduled time perf old new =
+    let
+        oldInterval : Float
+        oldInterval =
+            intervalFromCard old
+                |> Maybe.withDefault 0
+
+        newInterval : Float
+        newInterval =
+            intervalFromCard new
+                |> Maybe.withDefault 0
+    in
+    if performanceRatingToFloat perf >= 0.6 then
+        if zeroPercentDue time perf old then
+            Expect.within (Absolute 0.000000001) oldInterval newInterval
+
+        else
+            Expect.greaterThan oldInterval newInterval
+
+    else
+        boundedLessThan 1 oldInterval newInterval
+
+
+{-| Get the difficulty from a card.
+-}
+difficultyFromCard : Card a -> Float
+difficultyFromCard c =
+    case c.srsData of
+        New ->
+            0.3
+
+        Reviewed { difficulty } ->
+            difficultyToFloat difficulty
+
+
+{-| Fuzz a correct answer.
+-}
+fuzzCorrectPerformance : Fuzzer PerformanceRating
+fuzzCorrectPerformance =
+    Fuzz.map performanceRating <| floatRange 0.6 1.0
+
+
+{-| Fuzz two cards that are identical other than when they were last reviewed.
+-}
+fuzzDiffOverdueCards : Fuzzer ( { srsData : SRSData }, { srsData : SRSData } )
+fuzzDiffOverdueCards =
+    Fuzz.map4
+        (\diff t1 t2 interval ->
+            ( { srsData =
+                    Reviewed
+                        { difficulty = diff
+                        , interval = interval
+                        , lastReviewed = t1
+                        }
+              }
+            , { srsData =
+                    Reviewed
+                        { difficulty = diff
+                        , interval = interval
+                        , lastReviewed = t2
+                        }
+              }
+            )
+        )
+        fuzzDifficulty
+        fuzzTime
+        fuzzTime
+        fuzzInterval
+
+
+{-| Fuzz a card with non-SRS fields.
+-}
+fuzzExtendedCard : Fuzzer { srsData : SRSData, unrelatedField : Int }
+fuzzExtendedCard =
+    Fuzz.map2 (\d i -> { srsData = d, unrelatedField = i }) fuzzSRSData int
+
+
 {-| Test `answerCardInDeck`.
 -}
 suiteAnswerCardInDeck : Test
@@ -613,6 +457,18 @@ suiteGetDueCardIndices =
         ]
 
 
+{-| Determine whether a card is due.
+-}
+isDue : Time.Posix -> Card a -> Bool
+isDue time c =
+    case overdueAmountFromCard time c of
+        Just f ->
+            f >= 1
+
+        Nothing ->
+            True
+
+
 {-| Test `getDueCardIndicesWithDetails`.
 -}
 suiteGetDueCardIndicesWithDetails : Test
@@ -647,3 +503,147 @@ suiteGetDueCardIndicesWithDetails =
                     |> List.map .index
                     |> Expect.equalLists (getDueCardIndices time deck)
         ]
+
+
+{-| Test Json encoding/decoding.
+-}
+suiteJson : Test
+suiteJson =
+    describe "Json encoding/decoding"
+        [ describe "Encode should always be able to be decoded"
+            [ fuzz fuzzSRSData "Encode SRSData to string" <|
+                \d ->
+                    Encode.encode 0
+                        (Encode.object [ ( "srsData", encoderSRSData d ) ])
+                        |> Decode.decodeString (Decode.field "srsData" decoderSRSData)
+                        |> Expect.equal (Ok d)
+            , fuzz fuzzSRSData "Encode SRSData to value" <|
+                \d ->
+                    encoderSRSData d
+                        |> Decode.decodeValue decoderSRSData
+                        |> Expect.equal (Ok d)
+            ]
+        ]
+
+
+{-| Fuzz a card.
+-}
+fuzzCard : Fuzzer { srsData : SRSData }
+fuzzCard =
+    Fuzz.map (\d -> { srsData = d }) fuzzSRSData
+
+
+{-| Fuzz a deck of cards.
+-}
+fuzzDeck : Fuzzer (Array { srsData : SRSData })
+fuzzDeck =
+    Fuzz.array fuzzCard
+
+
+{-| Fuzz a difficulty.
+-}
+fuzzDifficulty : Fuzzer Difficulty
+fuzzDifficulty =
+    Fuzz.map createDifficulty (floatRange -0.1 1.1)
+
+
+{-| Fuzz a new interval for a card.
+-}
+fuzzInterval : Fuzzer SpacedRepetition.Internal.SMTwoPlus.Interval
+fuzzInterval =
+    Fuzz.map createInterval <| floatRange 0 100000
+
+
+{-| Fuzz an answer quality.
+-}
+fuzzPerformance : Fuzzer PerformanceRating
+fuzzPerformance =
+    Fuzz.map performanceRating <| floatRange -0.1 1.1
+
+
+{-| Fuzz a review history for a card.
+-}
+fuzzSRSData : Fuzzer SRSData
+fuzzSRSData =
+    Fuzz.oneOf
+        [ Fuzz.constant New
+        , Fuzz.map3
+            (\difficulty interval lastReviewed ->
+                Reviewed
+                    { difficulty = difficulty
+                    , interval = interval
+                    , lastReviewed = lastReviewed
+                    }
+            )
+            fuzzDifficulty
+            fuzzInterval
+            fuzzTime
+        ]
+
+
+{-| Get the interval from a card.
+-}
+intervalFromCard : Card a -> Maybe Float
+intervalFromCard c =
+    case c.srsData of
+        New ->
+            Nothing
+
+        Reviewed { interval } ->
+            Just <| intervalToFloat interval
+
+
+{-| Get the date last reviewed from a card.
+-}
+lastReviewedFromCard : Card a -> Maybe Time.Posix
+lastReviewedFromCard c =
+    case c.srsData of
+        New ->
+            Nothing
+
+        Reviewed { lastReviewed } ->
+            Just lastReviewed
+
+
+{-| Determine how overdue a card is.
+-}
+overdueAmount : Time.Posix -> Float -> Time.Posix -> Float
+overdueAmount time interval reviewed =
+    let
+        overdue : Float
+        overdue =
+            toFloat (16 + diff Hour Time.utc reviewed time) / 24 / interval
+    in
+    if diff Hour Time.utc reviewed time <= 8 then
+        min 0.99 overdue
+
+    else
+        overdue
+
+
+{-| Get the percent overdue a card is.
+-}
+overdueAmountFromCard : Time.Posix -> Card a -> Maybe Float
+overdueAmountFromCard time c =
+    case c.srsData of
+        New ->
+            Nothing
+
+        Reviewed { interval, lastReviewed } ->
+            Just <| overdueAmount time (intervalToFloat interval) lastReviewed
+
+
+{-| Determine if a card is not even slightly due.
+-}
+zeroPercentDue : Time.Posix -> PerformanceRating -> Card a -> Bool
+zeroPercentDue time perf card =
+    case lastReviewedFromCard card of
+        Just date ->
+            if performanceRatingToFloat perf < 0.6 then
+                False
+
+            else
+                diff Hour Time.utc date time <= 0
+
+        Nothing ->
+            False

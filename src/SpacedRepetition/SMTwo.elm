@@ -245,223 +245,6 @@ answerCard time answer =
         >> scheduleCard time answer
 
 
-{-| `getDueCardIndices` takes the current time (in the `Time.Posix` format returned by the `now` task of the core `Time` module) and a `Deck` and returns the indices of the subset of the `Deck` that is due for review (as `List Int`). While the SM-2 algorithm does not specify this, the returned indices will be sorted in the following order:
-
-1.  Cards overdue for review
-    1.  Cards more overdue (in number of days)
-    2.  Cards less overdue (in number of days)
-2.  Cards to be repeated at the end of the current session (due to poor-quality answers)
-3.  Any new cards in the deck (never having been studied before).
-
-`getDueCardIndices` assumes that a new day begins after 12 hours, e.g. if a card is scheduled to be studied the next day, it will become due after 12 hours of elapsed time. This can of course create edge cases where cards are reviewed too "early" if one studies very early in the morning and again late at night. Still, only very "new" cards would be affected, in which case the adverse effect is presumably minimal.
-
--}
-getDueCardIndices : Time.Posix -> Deck a -> List Int
-getDueCardIndices time deck =
-    Array.toIndexedList deck
-        |> List.filter
-            (isDue time << Tuple.second)
-        |> List.sortWith
-            (\( _, c1 ) ( _, c2 ) -> compareDue time c1 c2)
-        |> ListX.reverseMap Tuple.first
-
-
-{-| `getDueCardIndicesWithDetails` takes the current time (in the `Time.Posix` format returned by the `now` task of the core `Time` module) and a `Deck` and returns the subset of the `Deck` that is due for review (as a list of records), providing their index and which queue they are currently in, with any relevant queue details. While the SM-2 algorithm does not specify this, the returned indices will be sorted in the following order:
-
-1.  Cards overdue for review
-    1.  Cards more overdue (in number of days)
-    2.  Cards less overdue (in number of days)
-2.  Cards to be repeated at the end of the current session (due to poor-quality answers)
-3.  Any new cards in the deck (never having been studied before).
-
-`getDueCardIndicesWithDetails` assumes that a new day begins after 12 hours, e.g. if a card is scheduled to be studied the next day, it will become due after 12 hours of elapsed time. This can of course create edge cases where cards are reviewed too "early" if one studies very early in the morning and again late at night. Still, only very "new" cards would be affected, in which case the adverse effect is presumably minimal.
-
--}
-getDueCardIndicesWithDetails :
-    Time.Posix
-    -> Deck a
-    -> List { index : Int, queueDetails : QueueDetails }
-getDueCardIndicesWithDetails time deck =
-    Array.toIndexedList deck
-        |> List.filter
-            (isDue time << Tuple.second)
-        |> List.sortWith
-            (\( _, c1 ) ( _, c2 ) -> compareDue time c1 c2)
-        |> ListX.reverseMap
-            (\( index, card ) ->
-                { index = index, queueDetails = getQueueDetails card }
-            )
-
-
-{-| `QueueDetails` represents the current status of a card.
-
-  - `NewCard` -- A card that has never before been studied (encountered) by the user.
-  - `ReviewQueue {...}` -- A card that is being reviewed for retention.
-      - `intervalInDays : Int` -- The interval, in days from the date last seen, that the card was slated for review in.
-      - `lastReviewed : Time.Posix` -- The date and time the card was last reviewed.
-  - `RepeatingQueue {...}` -- A card to which an unsatisfactory answer was given, slated for review before the end of the session.
-      - `intervalInDays : Int` -- The interval, in days from the date last seen, that the card was slated for review in. This will reset to the based interval (1 day) if the card was answered incorrectly.
-
--}
-type QueueDetails
-    = NewCard
-    | ReviewQueue { intervalInDays : Int, lastReviewed : Time.Posix }
-    | RepeatingQueue { intervalInDays : Int }
-
-
-{-| `getCardDetails` returns the current queue status for a given card. If you require this for every due card, simply use `getDueCardIndicesWithDetails`.
--}
-getCardDetails : Card a -> { queueDetails : QueueDetails }
-getCardDetails c =
-    { queueDetails = getQueueDetails c }
-
-
-
--- * Non-exposed only below here
-
-
-{-| Given a card, return its review status.
--}
-getQueueDetails : Card a -> QueueDetails
-getQueueDetails c =
-    case c.srsData of
-        New ->
-            NewCard
-
-        Repeating { streak } ->
-            RepeatingQueue { intervalInDays = Natural.toInt <| streakToInterval streak }
-
-        Reviewed { lastReviewed, streak } ->
-            ReviewQueue
-                { intervalInDays = Natural.toInt <| streakToInterval streak
-                , lastReviewed = lastReviewed
-                }
-
-
-{-| Compare the "due"-ness of two cards at a given time.
--}
-compareDue : Time.Posix -> Card a -> Card a -> Order
-compareDue time c1 c2 =
-    case ( c1.srsData, c2.srsData ) of
-        -- New cards go last
-        ( New, New ) ->
-            EQ
-
-        ( New, _ ) ->
-            LT
-
-        ( _, New ) ->
-            GT
-
-        -- Repeating cards go before new but after reviewing
-        ( Repeating _, Repeating _ ) ->
-            EQ
-
-        ( Repeating _, _ ) ->
-            LT
-
-        ( _, Repeating _ ) ->
-            GT
-
-        -- If neither is end of session, then rank "more due" cards first.  Note that this isn't in the SM-2 algorithm and is just a QoL feature.  EQ case doesn't matter, since order becomes irrelevant then.
-        ( Reviewed r1, Reviewed r2 ) ->
-            if
-                daysOverdue time r1.lastReviewed (streakToInterval r1.streak)
-                    >= daysOverdue time r2.lastReviewed (streakToInterval r2.streak)
-            then
-                GT
-
-            else
-                LT
-
-
-{-| Given the current time, the time a card was last reviewed, and scheduled
-interval, determine how many days overdue the card is.
--}
-daysOverdue : Time.Posix -> Time.Posix -> Natural -> Float
-daysOverdue time reviewed interval =
-    let
-        dayDiff : Float
-        dayDiff =
-            toFloat (diff Hour Time.utc reviewed time) / 24
-    in
-    -- The "next day" starts after 12 hours; this is ultimately a hack to prevent the user of the module from having to determine when the day rolls over.
-    dayDiff + 0.5 - Natural.toFloat interval
-
-
-{-| Check if a card is currently due to be studied.
--}
-isDue : Time.Posix -> Card a -> Bool
-isDue time { srsData } =
-    case srsData of
-        New ->
-            True
-
-        Repeating _ ->
-            True
-
-        Reviewed { lastReviewed, streak } ->
-            daysOverdue time lastReviewed (streakToInterval streak) >= 0
-
-
-{-| Given an answer quality, update the ease of a card (if applicable).
--}
-updateEFactor : Answer -> Card a -> Card a
-updateEFactor answer card =
-    case card.srsData of
-        Reviewed { lastReviewed, streak } ->
-            let
-                q : Float
-                q =
-                    case answer of
-                        CorrectWithDifficulty ->
-                            3
-
-                        CorrectWithHesitation ->
-                            4
-
-                        IncorrectButFamiliar ->
-                            1
-
-                        IncorrectButRemembered ->
-                            2
-
-                        NoRecollection ->
-                            0
-
-                        Perfect ->
-                            5
-
-                oldEFactor : Float
-                oldEFactor =
-                    case card.srsData of
-                        Repeating { ease } ->
-                            eFactorToFloat ease
-
-                        Reviewed { ease } ->
-                            eFactorToFloat ease
-
-                        _ ->
-                            0
-
-                updatedEFactor : Float
-                updatedEFactor =
-                    oldEFactor + (0.1 - (5 - q) * (0.08 + (5 - q) * 0.02))
-            in
-            { card
-                | srsData =
-                    Reviewed
-                        { ease = eFactor updatedEFactor
-                        , lastReviewed = lastReviewed
-                        , streak = streak
-                        }
-            }
-
-        _ ->
-            -- Only update e-factor if reviewing
-            card
-
-
 {-| Given an answer quality, schedule the card for future review, updating its queue status.
 -}
 scheduleCard : Time.Posix -> Answer -> Card a -> Card a
@@ -539,3 +322,220 @@ scheduleCard time answer card =
                     Reviewed { ease = newEF, lastReviewed = time, streak = incrementStreak }
     in
     { card | srsData = newHistory }
+
+
+{-| Given an answer quality, update the ease of a card (if applicable).
+-}
+updateEFactor : Answer -> Card a -> Card a
+updateEFactor answer card =
+    case card.srsData of
+        Reviewed { lastReviewed, streak } ->
+            let
+                q : Float
+                q =
+                    case answer of
+                        CorrectWithDifficulty ->
+                            3
+
+                        CorrectWithHesitation ->
+                            4
+
+                        IncorrectButFamiliar ->
+                            1
+
+                        IncorrectButRemembered ->
+                            2
+
+                        NoRecollection ->
+                            0
+
+                        Perfect ->
+                            5
+
+                oldEFactor : Float
+                oldEFactor =
+                    case card.srsData of
+                        Repeating { ease } ->
+                            eFactorToFloat ease
+
+                        Reviewed { ease } ->
+                            eFactorToFloat ease
+
+                        _ ->
+                            0
+
+                updatedEFactor : Float
+                updatedEFactor =
+                    oldEFactor + (0.1 - (5 - q) * (0.08 + (5 - q) * 0.02))
+            in
+            { card
+                | srsData =
+                    Reviewed
+                        { ease = eFactor updatedEFactor
+                        , lastReviewed = lastReviewed
+                        , streak = streak
+                        }
+            }
+
+        _ ->
+            -- Only update e-factor if reviewing
+            card
+
+
+{-| `getDueCardIndices` takes the current time (in the `Time.Posix` format returned by the `now` task of the core `Time` module) and a `Deck` and returns the indices of the subset of the `Deck` that is due for review (as `List Int`). While the SM-2 algorithm does not specify this, the returned indices will be sorted in the following order:
+
+1.  Cards overdue for review
+    1.  Cards more overdue (in number of days)
+    2.  Cards less overdue (in number of days)
+2.  Cards to be repeated at the end of the current session (due to poor-quality answers)
+3.  Any new cards in the deck (never having been studied before).
+
+`getDueCardIndices` assumes that a new day begins after 12 hours, e.g. if a card is scheduled to be studied the next day, it will become due after 12 hours of elapsed time. This can of course create edge cases where cards are reviewed too "early" if one studies very early in the morning and again late at night. Still, only very "new" cards would be affected, in which case the adverse effect is presumably minimal.
+
+-}
+getDueCardIndices : Time.Posix -> Deck a -> List Int
+getDueCardIndices time deck =
+    Array.toIndexedList deck
+        |> List.filter
+            (isDue time << Tuple.second)
+        |> List.sortWith
+            (\( _, c1 ) ( _, c2 ) -> compareDue time c1 c2)
+        |> ListX.reverseMap Tuple.first
+
+
+{-| `getDueCardIndicesWithDetails` takes the current time (in the `Time.Posix` format returned by the `now` task of the core `Time` module) and a `Deck` and returns the subset of the `Deck` that is due for review (as a list of records), providing their index and which queue they are currently in, with any relevant queue details. While the SM-2 algorithm does not specify this, the returned indices will be sorted in the following order:
+
+1.  Cards overdue for review
+    1.  Cards more overdue (in number of days)
+    2.  Cards less overdue (in number of days)
+2.  Cards to be repeated at the end of the current session (due to poor-quality answers)
+3.  Any new cards in the deck (never having been studied before).
+
+`getDueCardIndicesWithDetails` assumes that a new day begins after 12 hours, e.g. if a card is scheduled to be studied the next day, it will become due after 12 hours of elapsed time. This can of course create edge cases where cards are reviewed too "early" if one studies very early in the morning and again late at night. Still, only very "new" cards would be affected, in which case the adverse effect is presumably minimal.
+
+-}
+getDueCardIndicesWithDetails :
+    Time.Posix
+    -> Deck a
+    -> List { index : Int, queueDetails : QueueDetails }
+getDueCardIndicesWithDetails time deck =
+    Array.toIndexedList deck
+        |> List.filter
+            (isDue time << Tuple.second)
+        |> List.sortWith
+            (\( _, c1 ) ( _, c2 ) -> compareDue time c1 c2)
+        |> ListX.reverseMap
+            (\( index, card ) ->
+                { index = index, queueDetails = getQueueDetails card }
+            )
+
+
+
+-- * Non-exposed only below here
+
+
+{-| `QueueDetails` represents the current status of a card.
+
+  - `NewCard` -- A card that has never before been studied (encountered) by the user.
+  - `ReviewQueue {...}` -- A card that is being reviewed for retention.
+      - `intervalInDays : Int` -- The interval, in days from the date last seen, that the card was slated for review in.
+      - `lastReviewed : Time.Posix` -- The date and time the card was last reviewed.
+  - `RepeatingQueue {...}` -- A card to which an unsatisfactory answer was given, slated for review before the end of the session.
+      - `intervalInDays : Int` -- The interval, in days from the date last seen, that the card was slated for review in. This will reset to the based interval (1 day) if the card was answered incorrectly.
+
+-}
+type QueueDetails
+    = NewCard
+    | ReviewQueue { intervalInDays : Int, lastReviewed : Time.Posix }
+    | RepeatingQueue { intervalInDays : Int }
+
+
+{-| `getCardDetails` returns the current queue status for a given card. If you require this for every due card, simply use `getDueCardIndicesWithDetails`.
+-}
+getCardDetails : Card a -> { queueDetails : QueueDetails }
+getCardDetails c =
+    { queueDetails = getQueueDetails c }
+
+
+{-| Compare the "due"-ness of two cards at a given time.
+-}
+compareDue : Time.Posix -> Card a -> Card a -> Order
+compareDue time c1 c2 =
+    case ( c1.srsData, c2.srsData ) of
+        -- New cards go last
+        ( New, New ) ->
+            EQ
+
+        ( New, _ ) ->
+            LT
+
+        ( _, New ) ->
+            GT
+
+        -- Repeating cards go before new but after reviewing
+        ( Repeating _, Repeating _ ) ->
+            EQ
+
+        ( Repeating _, _ ) ->
+            LT
+
+        ( _, Repeating _ ) ->
+            GT
+
+        -- If neither is end of session, then rank "more due" cards first.  Note that this isn't in the SM-2 algorithm and is just a QoL feature.  EQ case doesn't matter, since order becomes irrelevant then.
+        ( Reviewed r1, Reviewed r2 ) ->
+            if
+                daysOverdue time r1.lastReviewed (streakToInterval r1.streak)
+                    >= daysOverdue time r2.lastReviewed (streakToInterval r2.streak)
+            then
+                GT
+
+            else
+                LT
+
+
+{-| Given the current time, the time a card was last reviewed, and scheduled
+interval, determine how many days overdue the card is.
+-}
+daysOverdue : Time.Posix -> Time.Posix -> Natural -> Float
+daysOverdue time reviewed interval =
+    let
+        dayDiff : Float
+        dayDiff =
+            toFloat (diff Hour Time.utc reviewed time) / 24
+    in
+    -- The "next day" starts after 12 hours; this is ultimately a hack to prevent the user of the module from having to determine when the day rolls over.
+    dayDiff + 0.5 - Natural.toFloat interval
+
+
+{-| Given a card, return its review status.
+-}
+getQueueDetails : Card a -> QueueDetails
+getQueueDetails c =
+    case c.srsData of
+        New ->
+            NewCard
+
+        Repeating { streak } ->
+            RepeatingQueue { intervalInDays = Natural.toInt <| streakToInterval streak }
+
+        Reviewed { lastReviewed, streak } ->
+            ReviewQueue
+                { intervalInDays = Natural.toInt <| streakToInterval streak
+                , lastReviewed = lastReviewed
+                }
+
+
+{-| Check if a card is currently due to be studied.
+-}
+isDue : Time.Posix -> Card a -> Bool
+isDue time { srsData } =
+    case srsData of
+        New ->
+            True
+
+        Repeating _ ->
+            True
+
+        Reviewed { lastReviewed, streak } ->
+            daysOverdue time lastReviewed (streakToInterval streak) >= 0

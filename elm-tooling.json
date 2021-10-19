@@ -1,10 +1,4 @@
 {
-    "entrypoints": [
-        "./src/SpacedRepetition/Leitner.elm",
-        "./src/SpacedRepetition/SMTwo.elm",
-        "./src/SpacedRepetition/SMTwoAnki.elm",
-        "./src/SpacedRepetition/SMTwoPlus.elm"
-    ],
     "tools": {
         "elm": "0.19.1",
         "elm-format": "0.8.5",

@@ -95,33 +95,9 @@ suiteAnswerCard =
                     |> .srsData
                     |> (\data ->
                             let
-                                maxBox : Natural
-                                maxBox =
-                                    highestBoxIndex settings.numBoxes
-
-                                oldBox : Natural
-                                oldBox =
-                                    case card.srsData of
-                                        BoxN { box } ->
-                                            box
-
-                                        Graduated ->
-                                            Natural.succ maxBox
-
-                                        New ->
-                                            Natural.nil
-
-                                newBox : Natural
-                                newBox =
-                                    case data of
-                                        BoxN { box } ->
-                                            box
-
-                                        Graduated ->
-                                            Natural.succ maxBox
-
-                                        New ->
-                                            Natural.nil
+                                expectFirstBox : Expectation
+                                expectFirstBox =
+                                    Expect.equal Natural.nil newBox
 
                                 expectMoved : Int -> Expectation
                                 expectMoved i =
@@ -135,9 +111,33 @@ suiteAnswerCard =
                                         )
                                         newBox
 
-                                expectFirstBox : Expectation
-                                expectFirstBox =
-                                    Expect.equal Natural.nil newBox
+                                oldBox : Natural
+                                oldBox =
+                                    case card.srsData of
+                                        BoxN { box } ->
+                                            box
+
+                                        Graduated ->
+                                            Natural.succ maxBox
+
+                                        New ->
+                                            Natural.nil
+
+                                maxBox : Natural
+                                maxBox =
+                                    highestBoxIndex settings.numBoxes
+
+                                newBox : Natural
+                                newBox =
+                                    case data of
+                                        BoxN { box } ->
+                                            box
+
+                                        Graduated ->
+                                            Natural.succ maxBox
+
+                                        New ->
+                                            Natural.nil
                             in
                             case ( answer, settings.onIncorrect ) of
                                 ( BackToFirstBox, _ ) ->
@@ -247,11 +247,6 @@ suiteGetDueCardIndices =
                     due =
                         getDueCardIndices time deck
 
-                    overdueAmount : Natural -> Time.Posix -> Float
-                    overdueAmount box reviewed =
-                        (toFloat (diff Hour Time.utc reviewed time) / 24 + 0.5)
-                            / toFloat (deck.settings.boxSpacing <| Natural.toInt box)
-
                     isDue : { srsData : Box } -> Bool
                     isDue c =
                         case c.srsData of
@@ -263,6 +258,11 @@ suiteGetDueCardIndices =
 
                             New ->
                                 True
+
+                    overdueAmount : Natural -> Time.Posix -> Float
+                    overdueAmount box reviewed =
+                        (toFloat (diff Hour Time.utc reviewed time) / 24 + 0.5)
+                            / toFloat (deck.settings.boxSpacing <| Natural.toInt box)
                 in
                 Array.toIndexedList deck.cards
                     |> List.filter (not << flip List.member due << Tuple.first)
@@ -271,11 +271,6 @@ suiteGetDueCardIndices =
         , fuzz2 fuzzDeck fuzzTime "Due cards should not contain cards that are not due" <|
             \deck time ->
                 let
-                    overdueAmount : Natural -> Time.Posix -> Float
-                    overdueAmount box reviewed =
-                        (toFloat (diff Hour Time.utc reviewed time) / 24 + 0.5)
-                            / toFloat (deck.settings.boxSpacing <| Natural.toInt box)
-
                     isDue : { srsData : Box } -> Bool
                     isDue c =
                         case c.srsData of
@@ -287,6 +282,11 @@ suiteGetDueCardIndices =
 
                             New ->
                                 True
+
+                    overdueAmount : Natural -> Time.Posix -> Float
+                    overdueAmount box reviewed =
+                        (toFloat (diff Hour Time.utc reviewed time) / 24 + 0.5)
+                            / toFloat (deck.settings.boxSpacing <| Natural.toInt box)
                 in
                 List.filterMap (\i -> Array.get i deck.cards) (getDueCardIndices time deck)
                     |> ListX.count (not << isDue)
@@ -302,21 +302,16 @@ suiteGetDueCardIndices =
                     firstCard =
                         Maybe.withDefault { srsData = New } <| List.head dueDeck
 
-                    overdueAmount : { box : Natural, lastReviewed : Time.Posix } -> Float
-                    overdueAmount { box, lastReviewed } =
-                        (toFloat (diff Hour Time.utc lastReviewed time) / 24 + 0.5)
-                            / toFloat (deck.settings.boxSpacing <| Natural.toInt box)
-
                     step : { srsData : Box } -> ( { srsData : Box }, Bool ) -> ( { srsData : Box }, Bool )
                     step nextCard ( lastCard, goodSort ) =
                         let
-                            good : ( { srsData : Box }, Bool )
-                            good =
-                                ( nextCard, goodSort )
-
                             bad : ( { srsData : Box }, Bool )
                             bad =
                                 ( nextCard, False )
+
+                            good : ( { srsData : Box }, Bool )
+                            good =
+                                ( nextCard, goodSort )
                         in
                         case ( lastCard.srsData, nextCard.srsData ) of
                             ( Graduated, _ ) ->
@@ -342,6 +337,11 @@ suiteGetDueCardIndices =
 
                                 else
                                     bad
+
+                    overdueAmount : { box : Natural, lastReviewed : Time.Posix } -> Float
+                    overdueAmount { box, lastReviewed } =
+                        (toFloat (diff Hour Time.utc lastReviewed time) / 24 + 0.5)
+                            / toFloat (deck.settings.boxSpacing <| Natural.toInt box)
                 in
                 dueDeck
                     |> List.foldl step ( firstCard, True )

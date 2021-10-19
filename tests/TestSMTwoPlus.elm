@@ -130,6 +130,13 @@ suiteAnswerCard =
         , fuzz3 fuzzTime (Fuzz.tuple ( fuzzPerformance, fuzzPerformance )) fuzzCard "Better answers should always result in longer (or equal) intervals and vice versa, except bad incorrect behavior." <|
             \time ( perf1, perf2 ) card ->
                 let
+                    bothIncorrect : Bool
+                    bothIncorrect =
+                        performanceRatingToFloat perf1
+                            < 0.6
+                            && performanceRatingToFloat perf2
+                            < 0.6
+
                     firstInterval : Float
                     firstInterval =
                         answerCard Nothing time perf1 card
@@ -141,13 +148,6 @@ suiteAnswerCard =
                         answerCard Nothing time perf2 card
                             |> intervalFromCard
                             |> Maybe.withDefault -1
-
-                    bothIncorrect : Bool
-                    bothIncorrect =
-                        performanceRatingToFloat perf1
-                            < 0.6
-                            && performanceRatingToFloat perf2
-                            < 0.6
                 in
                 case
                     ( compare (performanceRatingToFloat perf1) (performanceRatingToFloat perf2)
@@ -195,6 +195,17 @@ suiteAnswerCard =
         , fuzz3 fuzzTime fuzzCorrectPerformance fuzzDiffOverdueCards "Correct answers for a more overdue card should result in longer intervals (up to 2x) and vice versa." <|
             \time answer ( card1, card2 ) ->
                 let
+                    firstDifficulty : Float
+                    firstDifficulty =
+                        answerCard Nothing time answer card1
+                            |> difficultyFromCard
+
+                    firstInterval : Float
+                    firstInterval =
+                        answerCard Nothing time answer card1
+                            |> intervalFromCard
+                            |> Maybe.withDefault -1
+
                     overdueAmt1 : Float
                     overdueAmt1 =
                         overdueAmountFromCard time card1
@@ -207,15 +218,9 @@ suiteAnswerCard =
                             |> Maybe.withDefault 0
                             |> min 2
 
-                    firstInterval : Float
-                    firstInterval =
-                        answerCard Nothing time answer card1
-                            |> intervalFromCard
-                            |> Maybe.withDefault -1
-
-                    firstDifficulty : Float
-                    firstDifficulty =
-                        answerCard Nothing time answer card1
+                    secondDifficulty : Float
+                    secondDifficulty =
+                        answerCard Nothing time answer card2
                             |> difficultyFromCard
 
                     secondInterval : Float
@@ -223,11 +228,6 @@ suiteAnswerCard =
                         answerCard Nothing time answer card2
                             |> intervalFromCard
                             |> Maybe.withDefault -1
-
-                    secondDifficulty : Float
-                    secondDifficulty =
-                        answerCard Nothing time answer card2
-                            |> difficultyFromCard
                 in
                 case ( compare overdueAmt1 overdueAmt2, compare firstDifficulty secondDifficulty ) of
                     ( EQ, _ ) ->
@@ -259,14 +259,14 @@ suiteAnswerCard =
 confirmCardScheduled : Time.Posix -> PerformanceRating -> Card a -> Card a -> Expectation
 confirmCardScheduled time perf old new =
     let
-        oldInterval : Float
-        oldInterval =
-            intervalFromCard old
-                |> Maybe.withDefault 0
-
         newInterval : Float
         newInterval =
             intervalFromCard new
+                |> Maybe.withDefault 0
+
+        oldInterval : Float
+        oldInterval =
+            intervalFromCard old
                 |> Maybe.withDefault 0
     in
     if performanceRatingToFloat perf >= 0.6 then
@@ -422,13 +422,13 @@ suiteGetDueCardIndices =
                     step : { srsData : SRSData } -> ( { srsData : SRSData }, Bool ) -> ( { srsData : SRSData }, Bool )
                     step nextCard ( lastCard, goodSort ) =
                         let
-                            good : ( { srsData : SRSData }, Bool )
-                            good =
-                                ( nextCard, goodSort )
-
                             bad : ( { srsData : SRSData }, Bool )
                             bad =
                                 ( nextCard, False )
+
+                            good : ( { srsData : SRSData }, Bool )
+                            good =
+                                ( nextCard, goodSort )
                         in
                         case ( lastCard.srsData, nextCard.srsData ) of
                             ( New, New ) ->

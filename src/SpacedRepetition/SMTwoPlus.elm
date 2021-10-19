@@ -295,10 +295,6 @@ nextInterval scheduleFunc percentDue perf card =
 
         Reviewed { difficulty, interval } ->
             let
-                difficultyWeight : Float
-                difficultyWeight =
-                    3 - 1.7 * difficultyToFloat difficulty
-
                 multiplier : Float
                 multiplier =
                     if isCorrect perf then
@@ -306,6 +302,10 @@ nextInterval scheduleFunc percentDue perf card =
 
                     else
                         scheduleFunc difficultyWeight
+
+                difficultyWeight : Float
+                difficultyWeight =
+                    3 - 1.7 * difficultyToFloat difficulty
             in
             createInterval <| intervalToFloat interval * multiplier
 

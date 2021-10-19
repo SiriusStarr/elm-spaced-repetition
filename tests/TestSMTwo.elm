@@ -354,10 +354,6 @@ suiteGetDueCardIndices =
                     due =
                         getDueCardIndices time deck
 
-                    overdueAmount : Natural -> Time.Posix -> Float
-                    overdueAmount interval reviewed =
-                        toFloat (diff Hour Time.utc reviewed time) / 24 + 0.5 - Natural.toFloat interval
-
                     isDue : { srsData : SRSData } -> Bool
                     isDue c =
                         case c.srsData of
@@ -366,6 +362,10 @@ suiteGetDueCardIndices =
 
                             _ ->
                                 True
+
+                    overdueAmount : Natural -> Time.Posix -> Float
+                    overdueAmount interval reviewed =
+                        toFloat (diff Hour Time.utc reviewed time) / 24 + 0.5 - Natural.toFloat interval
                 in
                 Array.toIndexedList deck
                     |> List.filter (not << flip List.member due << Tuple.first)
@@ -374,10 +374,6 @@ suiteGetDueCardIndices =
         , fuzz2 fuzzDeck fuzzTime "Due cards should not contain Reviewed cards that are not due" <|
             \deck time ->
                 let
-                    overdueAmount : Natural -> Time.Posix -> Float
-                    overdueAmount interval reviewed =
-                        toFloat (diff Hour Time.utc reviewed time) / 24 + 0.5 - Natural.toFloat interval
-
                     isNotDue : { srsData : SRSData } -> Bool
                     isNotDue c =
                         case c.srsData of
@@ -386,6 +382,10 @@ suiteGetDueCardIndices =
 
                             _ ->
                                 False
+
+                    overdueAmount : Natural -> Time.Posix -> Float
+                    overdueAmount interval reviewed =
+                        toFloat (diff Hour Time.utc reviewed time) / 24 + 0.5 - Natural.toFloat interval
                 in
                 List.filterMap (\i -> Array.get i deck) (getDueCardIndices time deck)
                     |> ListX.count isNotDue
@@ -406,20 +406,16 @@ suiteGetDueCardIndices =
                             Nothing ->
                                 { srsData = New }
 
-                    overdueAmount : Natural -> Time.Posix -> Float
-                    overdueAmount interval reviewed =
-                        toFloat (diff Hour Time.utc reviewed time) / 24 + 0.5 - Natural.toFloat interval
-
                     step : { srsData : SRSData } -> ( { srsData : SRSData }, Bool ) -> ( { srsData : SRSData }, Bool )
                     step nextCard ( lastCard, acc ) =
                         let
-                            good : ( { srsData : SRSData }, Bool )
-                            good =
-                                ( nextCard, acc )
-
                             bad : ( { srsData : SRSData }, Bool )
                             bad =
                                 ( nextCard, False )
+
+                            good : ( { srsData : SRSData }, Bool )
+                            good =
+                                ( nextCard, acc )
                         in
                         case ( lastCard.srsData, nextCard.srsData ) of
                             ( New, New ) ->
@@ -446,6 +442,10 @@ suiteGetDueCardIndices =
 
                                 else
                                     bad
+
+                    overdueAmount : Natural -> Time.Posix -> Float
+                    overdueAmount interval reviewed =
+                        toFloat (diff Hour Time.utc reviewed time) / 24 + 0.5 - Natural.toFloat interval
                 in
                 dueDeck
                     |> List.foldl step ( firstCard, True )

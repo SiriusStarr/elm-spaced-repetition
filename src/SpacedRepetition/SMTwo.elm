@@ -250,43 +250,6 @@ answerCard time answer =
 scheduleCard : Time.Posix -> Answer -> Card a -> Card a
 scheduleCard time answer card =
     let
-        continueStreak : EFactor -> Streak -> Streak
-        continueStreak eF streak =
-            (Natural.toFloat (streakToInterval streak)
-                * eFactorToFloat eF
-            )
-                |> ceiling
-                |> Natural.fromInt
-                |> Maybe.withDefault Natural.nil
-                |> (\interval -> TwoPlus { interval = interval })
-
-        ( newEF, incrementStreak ) =
-            case card.srsData of
-                New ->
-                    ( defaultEFactor, One )
-
-                Repeating { ease, streak } ->
-                    case streak of
-                        One ->
-                            ( ease, continueStreak ease streak )
-
-                        TwoPlus _ ->
-                            ( ease, continueStreak ease streak )
-
-                        Zero ->
-                            ( ease, One )
-
-                Reviewed { ease, streak } ->
-                    case streak of
-                        One ->
-                            ( ease, continueStreak ease streak )
-
-                        TwoPlus _ ->
-                            ( ease, continueStreak ease streak )
-
-                        Zero ->
-                            ( ease, One )
-
         newHistory : ReviewHistory
         newHistory =
             let
@@ -320,6 +283,43 @@ scheduleCard time answer card =
 
                 Perfect ->
                     Reviewed { ease = newEF, lastReviewed = time, streak = incrementStreak }
+
+        ( newEF, incrementStreak ) =
+            case card.srsData of
+                New ->
+                    ( defaultEFactor, One )
+
+                Repeating { ease, streak } ->
+                    case streak of
+                        One ->
+                            ( ease, continueStreak ease streak )
+
+                        TwoPlus _ ->
+                            ( ease, continueStreak ease streak )
+
+                        Zero ->
+                            ( ease, One )
+
+                Reviewed { ease, streak } ->
+                    case streak of
+                        One ->
+                            ( ease, continueStreak ease streak )
+
+                        TwoPlus _ ->
+                            ( ease, continueStreak ease streak )
+
+                        Zero ->
+                            ( ease, One )
+
+        continueStreak : EFactor -> Streak -> Streak
+        continueStreak eF streak =
+            (Natural.toFloat (streakToInterval streak)
+                * eFactorToFloat eF
+            )
+                |> ceiling
+                |> Natural.fromInt
+                |> Maybe.withDefault Natural.nil
+                |> (\interval -> TwoPlus { interval = interval })
     in
     { card | srsData = newHistory }
 
@@ -331,6 +331,22 @@ updateEFactor answer card =
     case card.srsData of
         Reviewed { lastReviewed, streak } ->
             let
+                updatedEFactor : Float
+                updatedEFactor =
+                    oldEFactor + (0.1 - (5 - q) * (0.08 + (5 - q) * 0.02))
+
+                oldEFactor : Float
+                oldEFactor =
+                    case card.srsData of
+                        Repeating { ease } ->
+                            eFactorToFloat ease
+
+                        Reviewed { ease } ->
+                            eFactorToFloat ease
+
+                        _ ->
+                            0
+
                 q : Float
                 q =
                     case answer of
@@ -351,22 +367,6 @@ updateEFactor answer card =
 
                         Perfect ->
                             5
-
-                oldEFactor : Float
-                oldEFactor =
-                    case card.srsData of
-                        Repeating { ease } ->
-                            eFactorToFloat ease
-
-                        Reviewed { ease } ->
-                            eFactorToFloat ease
-
-                        _ ->
-                            0
-
-                updatedEFactor : Float
-                updatedEFactor =
-                    oldEFactor + (0.1 - (5 - q) * (0.08 + (5 - q) * 0.02))
             in
             { card
                 | srsData =

@@ -562,11 +562,6 @@ scheduleCard settings time answer card =
             -- The actual interval the card went without being reviewed.
             effectiveInterval settings answer time card
 
-        scaleReviewInterval : Float -> TimeInterval Minutes -> TimeInterval Days
-        scaleReviewInterval f oldInterval =
-            -- Increase interval by a factor f and ensure it's at least 1 day longer
-            scaleIntervalWithMinimum (f * settings.intervalModifier) (addDay oldInterval) oldInterval
-
         review : Ease -> Natural -> TimeInterval Days -> SRSData
         review ease lapses interval =
             Review
@@ -575,6 +570,11 @@ scheduleCard settings time answer card =
                 , lapses = lapses
                 , lastReviewed = time
                 }
+
+        scaleReviewInterval : Float -> TimeInterval Minutes -> TimeInterval Days
+        scaleReviewInterval f oldInterval =
+            -- Increase interval by a factor f and ensure it's at least 1 day longer
+            scaleIntervalWithMinimum (f * settings.intervalModifier) (addDay oldInterval) oldInterval
 
         setStep : Natural -> SRSData
         setStep step =
@@ -745,10 +745,6 @@ amount as follows:
 fuzzedIntervalGenerator : TimeInterval Days -> Random.Generator (TimeInterval Days)
 fuzzedIntervalGenerator interval =
     let
-        i : Int
-        i =
-            timeIntervalToDays interval
-
         ( minInterval, maxInterval ) =
             -- These are the fuzz amounts per Anki's source
             case compare i 2 of
@@ -772,6 +768,10 @@ fuzzedIntervalGenerator interval =
 
                 LT ->
                     ( 1, 1 )
+
+        i : Int
+        i =
+            timeIntervalToDays interval
     in
     Random.map timeIntervalFromDays <| Random.int minInterval maxInterval
 
@@ -1140,6 +1140,14 @@ overdueAmount settings time card =
 
         _ ->
             let
+                interval : Int
+                interval =
+                    getCurrentIntervalInMinutes settings card
+
+                minutesOverdue : Int
+                minutesOverdue =
+                    diff Minute Time.utc reviewed time - interval
+
                 reviewed : Time.Posix
                 reviewed =
                     case card.srsData of
@@ -1154,14 +1162,6 @@ overdueAmount settings time card =
 
                         Review { lastReviewed } ->
                             lastReviewed
-
-                interval : Int
-                interval =
-                    getCurrentIntervalInMinutes settings card
-
-                minutesOverdue : Int
-                minutesOverdue =
-                    diff Minute Time.utc reviewed time - interval
             in
             -- (Relative Amount Overdue, Absolute Minutes Overdue)
             ( toFloat minutesOverdue / toFloat interval, minutesOverdue )

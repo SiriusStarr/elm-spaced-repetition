@@ -401,10 +401,6 @@ suiteAnswerCard =
         , fuzz3 (Fuzz.tuple ( fuzzSettings, fuzzAnswer )) (Fuzz.tuple ( fuzzTime, fuzzAnswer )) fuzzReview "Better answers should always result in longer (or equal) intervals and vice versa" <|
             \( settings, answer1 ) ( time, answer2 ) old ->
                 let
-                    card : { srsData : SRSData }
-                    card =
-                        { srsData = Review old }
-
                     interval1 : Int
                     interval1 =
                         answerCard time answer1 settings card
@@ -428,6 +424,10 @@ suiteAnswerCard =
                         expectFuzzedGreaterInterval settings
                             ( nextInterval settings answer2 time old, interval2 )
                             ( nextInterval settings answer1 time old, interval1 )
+
+                    card : { srsData : SRSData }
+                    card =
+                        { srsData = Review old }
                 in
                 case ( answer1, answer2 ) of
                     ( Again, Again ) ->
@@ -462,14 +462,6 @@ suiteAnswerCard =
         , fuzz2 fuzzResponse fuzzDiffOverdueCards "Correct answers for a more overdue card should result in longer intervals and vice versa." <|
             \( time, answer, settings ) ( review1, review2 ) ->
                 let
-                    overdueAmt1 : Int
-                    overdueAmt1 =
-                        overdueAmount settings time (Review review1)
-
-                    overdueAmt2 : Int
-                    overdueAmt2 =
-                        overdueAmount settings time (Review review2)
-
                     interval1 : Int
                     interval1 =
                         answerCard time answer settings { srsData = Review review1 }
@@ -481,6 +473,14 @@ suiteAnswerCard =
                         answerCard time answer settings { srsData = Review review2 }
                             |> reviewIntervalFromCard
                             |> Maybe.withDefault 0
+
+                    overdueAmt1 : Int
+                    overdueAmt1 =
+                        overdueAmount settings time (Review review1)
+
+                    overdueAmt2 : Int
+                    overdueAmt2 =
+                        overdueAmount settings time (Review review2)
                 in
                 case ( answer, compare overdueAmt1 overdueAmt2 ) of
                     ( Again, _ ) ->
@@ -701,6 +701,10 @@ suiteGetDue =
                     step : { srsData : SRSData } -> ( { srsData : SRSData }, Bool ) -> ( { srsData : SRSData }, Bool )
                     step nextCard ( lastCard, acc ) =
                         let
+                            bad : ( { srsData : SRSData }, Bool )
+                            bad =
+                                ( nextCard, False )
+
                             good : ( { srsData : SRSData }, Bool )
                             good =
                                 ( nextCard, acc )
@@ -708,10 +712,6 @@ suiteGetDue =
                             lastMoreOverdue : ( { srsData : SRSData }, Bool )
                             lastMoreOverdue =
                                 ( nextCard, proportionOverdue lastCard >= proportionOverdue nextCard && acc )
-
-                            bad : ( { srsData : SRSData }, Bool )
-                            bad =
-                                ( nextCard, False )
 
                             proportionOverdue : { srsData : SRSData } -> Float
                             proportionOverdue c =
@@ -1169,9 +1169,20 @@ be, in minutes.
 nextInterval : AnkiSettings -> Answer -> Time.Posix -> ReviewData -> Int
 nextInterval settings answer time old =
     let
-        oldEase : Float
-        oldEase =
-            easeToFloat old.ease
+        modifier : Float
+        modifier =
+            case answer of
+                Again ->
+                    0
+
+                Easy ->
+                    newEase * max 1 settings.easyBonus
+
+                Good ->
+                    newEase
+
+                Hard ->
+                    min newEase settings.hardInterval
 
         newEase : Float
         newEase =
@@ -1188,24 +1199,9 @@ nextInterval settings answer time old =
                 Hard ->
                     max 1.3 <| oldEase - 0.15
 
-        oldIntervalInMinutes : Int
-        oldIntervalInMinutes =
-            timeIntervalToMinutes old.interval
-
-        modifier : Float
-        modifier =
-            case answer of
-                Again ->
-                    0
-
-                Easy ->
-                    newEase * max 1 settings.easyBonus
-
-                Good ->
-                    newEase
-
-                Hard ->
-                    min newEase settings.hardInterval
+        oldEase : Float
+        oldEase =
+            easeToFloat old.ease
 
         scaleInterval : Int
         scaleInterval =
@@ -1226,6 +1222,10 @@ nextInterval settings answer time old =
 
                 Hard ->
                     oldIntervalInMinutes
+
+        oldIntervalInMinutes : Int
+        oldIntervalInMinutes =
+            timeIntervalToMinutes old.interval
     in
     modifier
         * settings.intervalModifier

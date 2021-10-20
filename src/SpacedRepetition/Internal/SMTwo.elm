@@ -35,13 +35,6 @@ import SpacedRepetition.Internal.Natural as Natural exposing (Natural)
 import Time
 
 
-{-| Opaque type for "ease". Must be greater than 1.3, default value of 2.5
-, with larger values being "easier" (more time between reviews).
--}
-type EFactor
-    = EFactor Float
-
-
 {-| The current review history for a card:
 
   - `New` -- Never before reviewed.
@@ -55,6 +48,13 @@ type ReviewHistory
     | Repeating { ease : EFactor, streak : Streak }
 
 
+{-| Opaque type for "ease". Must be greater than 1.3, default value of 2.5
+, with larger values being "easier" (more time between reviews).
+-}
+type EFactor
+    = EFactor Float
+
+
 {-| The current streak of correct answers for a card. Cards with 2 or more
 correct repetitions are not treated differently and are thus combined.
 -}
@@ -64,11 +64,56 @@ type Streak
     | TwoPlus { interval : Natural }
 
 
+{-| Default EFactor value for new cards.
+-}
+defaultEFactor : EFactor
+defaultEFactor =
+    EFactor 2.5
+
+
+{-| Create an `EFactor` by ensuring a float is at least `1.3`.
+-}
+eFactor : Float -> EFactor
+eFactor f =
+    EFactor <| max 1.3 f
+
+
+{-| Unwrap the opaque type `EFactor`.
+-}
+eFactorToFloat : EFactor -> Float
+eFactorToFloat (EFactor f) =
+    f
+
+
+{-| Given how many times a card has been correctly answered in a row, determine the interval between reviews.
+-}
+streakToInterval : Streak -> Natural
+streakToInterval streak =
+    (case streak of
+        Zero ->
+            Natural.fromInt 1
+
+        One ->
+            Natural.fromInt 6
+
+        TwoPlus { interval } ->
+            Just interval
+    )
+        |> Maybe.withDefault Natural.nil
+
+
 {-| Decode an`EFactor` as from JSON.
 -}
 decodeEFactor : Decoder EFactor
 decodeEFactor =
     Decode.map eFactor Decode.float
+
+
+{-| Encode an`EFactor` as JSON.
+-}
+encodeEFactor : EFactor -> Encode.Value
+encodeEFactor eF =
+    Encode.float <| eFactorToFloat eF
 
 
 {-| Decode a `Streak` from JSON.
@@ -93,34 +138,6 @@ decodeStreak =
         ]
 
 
-{-| Default EFactor value for new cards.
--}
-defaultEFactor : EFactor
-defaultEFactor =
-    EFactor 2.5
-
-
-{-| Create an `EFactor` by ensuring a float is at least `1.3`.
--}
-eFactor : Float -> EFactor
-eFactor f =
-    EFactor <| max 1.3 f
-
-
-{-| Unwrap the opaque type `EFactor`.
--}
-eFactorToFloat : EFactor -> Float
-eFactorToFloat (EFactor f) =
-    f
-
-
-{-| Encode an`EFactor` as JSON.
--}
-encodeEFactor : EFactor -> Encode.Value
-encodeEFactor eF =
-    Encode.float <| eFactorToFloat eF
-
-
 {-| Encode a `Streak` as JSON.
 -}
 encodeStreak : Streak -> Encode.Value
@@ -134,20 +151,3 @@ encodeStreak streak =
 
         TwoPlus { interval } ->
             Natural.encode interval
-
-
-{-| Given how many times a card has been correctly answered in a row, determine the interval between reviews.
--}
-streakToInterval : Streak -> Natural
-streakToInterval streak =
-    (case streak of
-        Zero ->
-            Natural.fromInt 1
-
-        One ->
-            Natural.fromInt 6
-
-        TwoPlus { interval } ->
-            Just interval
-    )
-        |> Maybe.withDefault Natural.nil

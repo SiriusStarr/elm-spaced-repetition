@@ -45,6 +45,52 @@ type Natural
     = Natural Int
 
 
+{-| Zero.
+-}
+nil : Natural
+nil =
+    Natural 0
+
+
+{-| 6
+-}
+six : Natural
+six =
+    Natural 6
+
+
+{-| 8
+-}
+eight : Natural
+eight =
+    Natural 8
+
+
+{-| Unpack a `Natural` into an `Int`.
+-}
+toInt : Natural -> Int
+toInt (Natural i) =
+    i
+
+
+{-| Cast a `Natural` to a `Float`.
+-}
+toFloat : Natural -> Float
+toFloat (Natural i) =
+    Basics.toFloat i
+
+
+{-| Convert an `Int` to a `Natural` or fail.
+-}
+fromInt : Int -> Maybe Natural
+fromInt i =
+    if i < 0 then
+        Nothing
+
+    else
+        Just <| Natural i
+
+
 {-| Compare to naturals and return an ordering.
 -}
 compare : Natural -> Natural -> Order
@@ -57,6 +103,27 @@ compare (Natural i) (Natural j) =
 
     else
         EQ
+
+
+{-| Find the larger of two `Natural`s.
+-}
+max : Natural -> Natural -> Natural
+max (Natural i) (Natural j) =
+    Natural <| Basics.max i j
+
+
+{-| Get the number before the current one, or stay at zero.
+-}
+pred : Natural -> Natural
+pred (Natural i) =
+    Natural <| Basics.max 0 <| i - 1
+
+
+{-| Get the number after the current one.
+-}
+succ : Natural -> Natural
+succ (Natural i) =
+    Natural <| i + 1
 
 
 {-| JSON decoder for `Natural`.
@@ -75,75 +142,8 @@ decode =
             )
 
 
-{-| 8
--}
-eight : Natural
-eight =
-    Natural 8
-
-
 {-| JSON encoder for `Natural`.
 -}
 encode : Natural -> Encode.Value
 encode (Natural i) =
     Encode.int i
-
-
-{-| Convert an `Int` to a `Natural` or fail.
--}
-fromInt : Int -> Maybe Natural
-fromInt i =
-    if i < 0 then
-        Nothing
-
-    else
-        Just <| Natural i
-
-
-{-| Find the larger of two `Natural`s.
--}
-max : Natural -> Natural -> Natural
-max (Natural i) (Natural j) =
-    Natural <| Basics.max i j
-
-
-{-| Zero.
--}
-nil : Natural
-nil =
-    Natural 0
-
-
-{-| Get the number before the current one, or stay at zero.
--}
-pred : Natural -> Natural
-pred (Natural i) =
-    Natural <| Basics.max 0 <| i - 1
-
-
-{-| 6
--}
-six : Natural
-six =
-    Natural 6
-
-
-{-| Get the number after the current one.
--}
-succ : Natural -> Natural
-succ (Natural i) =
-    Natural <| i + 1
-
-
-{-| Cast a `Natural` to a `Float`.
--}
-toFloat : Natural -> Float
-toFloat (Natural i) =
-    Basics.toFloat i
-
-
-{-| Unpack a `Natural` into an `Int`.
--}
-toInt : Natural -> Int
-toInt (Natural i) =
-    i

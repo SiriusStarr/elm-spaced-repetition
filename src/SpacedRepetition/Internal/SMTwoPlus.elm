@@ -35,6 +35,21 @@ import Round exposing (roundNum)
 import Time
 
 
+{-| The review history of a card:
+
+  - `New` -- The card has not been reviewed yet.
+  - `Reviewed` -- The card has been reviewed.
+
+-}
+type ReviewHistory
+    = New
+    | Reviewed
+        { difficulty : Difficulty
+        , interval : Interval
+        , lastReviewed : Time.Posix
+        }
+
+
 {-| Opaque type for the difficulty of a card.
 -}
 type Difficulty
@@ -53,19 +68,11 @@ type PerformanceRating
     = PerformanceRating Float
 
 
-{-| The review history of a card:
-
-  - `New` -- The card has not been reviewed yet.
-  - `Reviewed` -- The card has been reviewed.
-
+{-| The starting difficulty for new cards.
 -}
-type ReviewHistory
-    = New
-    | Reviewed
-        { difficulty : Difficulty
-        , interval : Interval
-        , lastReviewed : Time.Posix
-        }
+defaultDifficulty : Difficulty
+defaultDifficulty =
+    Difficulty 0.3
 
 
 {-| Turn a `Float` into a `Difficulty`, clamping it between 0 and 1.
@@ -73,6 +80,13 @@ type ReviewHistory
 createDifficulty : Float -> Difficulty
 createDifficulty f =
     Difficulty <| clamp 0.0 1.0 f
+
+
+{-| Unpack the opaque type `Difficulty`.
+-}
+difficultyToFloat : Difficulty -> Float
+difficultyToFloat (Difficulty f) =
+    f
 
 
 {-| Turn a `Float` into an `Interval`, rounding it to 4 decimal places and
@@ -83,48 +97,6 @@ createInterval f =
     roundNum 4 f
         |> max 1
         |> Interval
-
-
-{-| Decode a difficulty from JSON.
--}
-decodeDifficulty : Decoder Difficulty
-decodeDifficulty =
-    Decode.map createDifficulty Decode.float
-
-
-{-| Decode an interval from JSON.
--}
-decodeInterval : Decoder Interval
-decodeInterval =
-    Decode.map createInterval Decode.float
-
-
-{-| The starting difficulty for new cards.
--}
-defaultDifficulty : Difficulty
-defaultDifficulty =
-    Difficulty 0.3
-
-
-{-| Unpack the opaque type `Difficulty`.
--}
-difficultyToFloat : Difficulty -> Float
-difficultyToFloat (Difficulty f) =
-    f
-
-
-{-| Encode a difficulty as JSON.
--}
-encodeDifficulty : Difficulty -> Encode.Value
-encodeDifficulty =
-    Encode.float << difficultyToFloat
-
-
-{-| Encode an interval as JSON.
--}
-encodeInterval : Interval -> Encode.Value
-encodeInterval =
-    Encode.float << intervalToFloat
 
 
 {-| Unpack the opaque type `Interval`.
@@ -146,3 +118,31 @@ performanceRating f =
 performanceRatingToFloat : PerformanceRating -> Float
 performanceRatingToFloat (PerformanceRating f) =
     f
+
+
+{-| Decode a difficulty from JSON.
+-}
+decodeDifficulty : Decoder Difficulty
+decodeDifficulty =
+    Decode.map createDifficulty Decode.float
+
+
+{-| Encode a difficulty as JSON.
+-}
+encodeDifficulty : Difficulty -> Encode.Value
+encodeDifficulty =
+    Encode.float << difficultyToFloat
+
+
+{-| Decode an interval from JSON.
+-}
+decodeInterval : Decoder Interval
+decodeInterval =
+    Decode.map createInterval Decode.float
+
+
+{-| Encode an interval as JSON.
+-}
+encodeInterval : Interval -> Encode.Value
+encodeInterval =
+    Encode.float << intervalToFloat

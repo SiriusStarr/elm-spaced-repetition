@@ -1,5 +1,14 @@
 module SpacedRepetition.Internal.Time exposing (decode, encode)
 
+{-| Internal module for `Time.Posix`.
+
+
+## JSON Decoders/Encoders
+
+@docs decode, encode
+
+-}
+
 import Json.Decode as Decode exposing (Decoder)
 import Json.Encode as Encode
 import Time

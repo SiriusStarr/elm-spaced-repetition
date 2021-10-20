@@ -1,16 +1,33 @@
 module SpacedRepetition.Internal.SMTwo exposing
-    ( EFactor
-    , ReviewHistory(..)
-    , Streak(..)
-    , decodeEFactor
-    , decodeStreak
+    ( ReviewHistory(..), EFactor, Streak(..)
     , defaultEFactor
-    , eFactor
-    , eFactorToFloat
-    , encodeEFactor
-    , encodeStreak
-    , streakToInterval
+    , eFactor, eFactorToFloat, streakToInterval
+    , decodeEFactor, encodeEFactor, decodeStreak, encodeStreak
     )
+
+{-| Internal module for SMTwo algorithm.
+
+
+## Opaque Types
+
+@docs ReviewHistory, EFactor, Streak
+
+
+## Values
+
+@docs defaultEFactor
+
+
+## Conversion Functions
+
+@docs eFactor, eFactorToFloat, streakToInterval
+
+
+## JSON Decoders/Encoders
+
+@docs decodeEFactor, encodeEFactor, decodeStreak, encodeStreak
+
+-}
 
 import Json.Decode as Decode exposing (Decoder)
 import Json.Encode as Encode

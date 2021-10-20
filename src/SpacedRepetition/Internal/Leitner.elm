@@ -1,4 +1,21 @@
-module SpacedRepetition.Internal.Leitner exposing (Box(..), NumberOfBoxes, highestBoxIndex, numberOfBoxes)
+module SpacedRepetition.Internal.Leitner exposing
+    ( Box(..), NumberOfBoxes
+    , highestBoxIndex, numberOfBoxes
+    )
+
+{-| Internal module for the Leitner system, defining opaque types.
+
+
+## Types
+
+@docs Box, NumberOfBoxes
+
+
+## Wrapping/Unwrapping Functions
+
+@docs highestBoxIndex, numberOfBoxes
+
+-}
 
 import SpacedRepetition.Internal.Natural as Natural exposing (Natural)
 import Time

@@ -1,25 +1,33 @@
 module SpacedRepetition.Internal.SMTwoAnki exposing
-    ( Days
-    , Ease
-    , Minutes
-    , QueueStatus(..)
-    , TimeInterval
-    , addDay
-    , adjustEase
-    , createEase
-    , decodeDayInterval
-    , decodeEase
-    , easeToFloat
-    , encodeDayInterval
-    , encodeEase
-    , encodeMinuteInterval
-    , minInterval
-    , minutesToDayInterval
-    , timeIntervalFromDays
-    , timeIntervalFromMinutes
-    , timeIntervalToDays
-    , timeIntervalToMinutes
+    ( QueueStatus(..), Ease, TimeInterval, Minutes, Days
+    , createEase, easeToFloat, timeIntervalFromMinutes, timeIntervalToMinutes, timeIntervalFromDays, timeIntervalToDays, minutesToDayInterval
+    , adjustEase, addDay, minInterval
+    , decodeEase, encodeEase, decodeDayInterval, encodeDayInterval, encodeMinuteInterval
     )
+
+{-| Internal module for SMTwoAnki algorithm.
+
+
+## Opaque Types
+
+@docs QueueStatus, Ease, TimeInterval, Minutes, Days
+
+
+## Conversion Functions
+
+@docs createEase, easeToFloat, timeIntervalFromMinutes, timeIntervalToMinutes, timeIntervalFromDays, timeIntervalToDays, minutesToDayInterval
+
+
+## Manipulation Functions
+
+@docs adjustEase, addDay, minInterval
+
+
+## JSON Decoders/Encoders
+
+@docs decodeEase, encodeEase, decodeDayInterval, encodeDayInterval, encodeMinuteInterval
+
+-}
 
 import Json.Decode as Decode exposing (Decoder)
 import Json.Encode as Encode

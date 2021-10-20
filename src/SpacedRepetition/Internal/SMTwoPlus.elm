@@ -1,20 +1,33 @@
 module SpacedRepetition.Internal.SMTwoPlus exposing
-    ( Difficulty
-    , Interval
-    , PerformanceRating
-    , ReviewHistory(..)
-    , createDifficulty
-    , createInterval
-    , decodeDifficulty
-    , decodeInterval
+    ( ReviewHistory(..), Difficulty, Interval, PerformanceRating
     , defaultDifficulty
-    , difficultyToFloat
-    , encodeDifficulty
-    , encodeInterval
-    , intervalToFloat
-    , performanceRating
-    , performanceRatingToFloat
+    , createDifficulty, difficultyToFloat, createInterval, intervalToFloat, performanceRating, performanceRatingToFloat
+    , decodeDifficulty, encodeDifficulty, decodeInterval, encodeInterval
     )
+
+{-| Internal module for SMTwoPlus algorithm.
+
+
+## Opaque Types
+
+@docs ReviewHistory, Difficulty, Interval, PerformanceRating
+
+
+## Values
+
+@docs defaultDifficulty
+
+
+## Conversion Functions
+
+@docs createDifficulty, difficultyToFloat, createInterval, intervalToFloat, performanceRating, performanceRatingToFloat
+
+
+## JSON Decoders/Encoders
+
+@docs decodeDifficulty, encodeDifficulty, decodeInterval, encodeInterval
+
+-}
 
 import Json.Decode as Decode exposing (Decoder)
 import Json.Encode as Encode

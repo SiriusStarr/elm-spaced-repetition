@@ -1,18 +1,39 @@
 module SpacedRepetition.Internal.Natural exposing
     ( Natural
-    , compare
-    , decode
-    , eight
-    , encode
-    , fromInt
-    , max
-    , nil
-    , pred
-    , six
-    , succ
-    , toFloat
-    , toInt
+    , nil, six, eight
+    , toInt, toFloat, fromInt
+    , compare, max, pred, succ
+    , decode, encode
     )
+
+{-| Internal module for natural numbers.
+
+
+## Type
+
+@docs Natural
+
+
+## Values
+
+@docs nil, six, eight
+
+
+## Conversion Functions
+
+@docs toInt, toFloat, fromInt
+
+
+## Manipulation Functions
+
+@docs compare, max, pred, succ
+
+
+## JSON Decoders/Encoders
+
+@docs decode, encode
+
+-}
 
 import Json.Decode as Decode exposing (Decoder)
 import Json.Encode as Encode

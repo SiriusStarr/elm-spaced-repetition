@@ -450,8 +450,7 @@ suiteGetDueCardIndices =
                                 else
                                     bad
                 in
-                dueDeck
-                    |> List.foldl step ( firstCard, True )
+                List.foldl step ( firstCard, True ) dueDeck
                     |> Tuple.second
                     |> Expect.true "Expected a sorted deck"
         ]

@@ -98,7 +98,9 @@ cardSchedulingTests =
                                 normalGraduation : ReviewData -> Expectation
                                 normalGraduation =
                                     Expect.all
-                                        [ \_ -> Expect.atLeast (List.length settings.newSteps) <| Natural.toInt (Natural.succ old.step)
+                                        [ \_ ->
+                                            Natural.toInt (Natural.succ old.step)
+                                                |> Expect.atLeast (List.length settings.newSteps)
                                         , \{ ease } -> Expect.within (Absolute 0.000000001) (easeToFloat settings.startingEase) <| easeToFloat ease
                                         , \{ interval } -> Expect.equal (boundedDayInterval settings settings.graduatingInterval) interval
                                         , \{ lapses } -> Expect.equal Natural.nil lapses
@@ -162,7 +164,9 @@ cardSchedulingTests =
                             case ( srsData, answer ) of
                                 ( Review new, Good ) ->
                                     Expect.all
-                                        [ \_ -> Expect.atLeast (List.length settings.lapseSteps) <| Natural.toInt (Natural.succ old.step)
+                                        [ \_ ->
+                                            Natural.toInt (Natural.succ old.step)
+                                                |> Expect.atLeast (List.length settings.lapseSteps)
                                         , graduation
                                         ]
                                         new
@@ -748,8 +752,7 @@ suiteGetDue =
                             ( Lapsed _, Lapsed _ ) ->
                                 lastMoreOverdue
                 in
-                dueDeck
-                    |> List.foldl step ( firstCard, True )
+                List.foldl step ( firstCard, True ) dueDeck
                     |> Tuple.second
                     |> Expect.true "Expected a sorted deck"
         ]

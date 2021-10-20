@@ -277,11 +277,8 @@ newDifficulty percentDue perf card =
             defaultDifficulty
 
         Reviewed { difficulty } ->
-            createDifficulty <|
-                difficultyToFloat difficulty
-                    + percentDue
-                    * (8 - 9 * performanceRatingToFloat perf)
-                    / 17
+            (difficultyToFloat difficulty + percentDue * (8 - 9 * performanceRatingToFloat perf) / 17)
+                |> createDifficulty
 
 
 {-| Given a way to schedule incorrect cards, a percent overdue, and an answer

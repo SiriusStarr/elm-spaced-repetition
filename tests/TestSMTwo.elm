@@ -136,16 +136,17 @@ suiteAnswerCard =
             \time answer card ->
                 answerCard time answer card
                     |> (\c ->
-                            Expect.true "Card should be repeated if necessary" <|
-                                case answer of
-                                    Perfect ->
-                                        isReviewed c
+                            (case answer of
+                                Perfect ->
+                                    isReviewed c
 
-                                    CorrectWithHesitation ->
-                                        isReviewed c
+                                CorrectWithHesitation ->
+                                    isReviewed c
 
-                                    _ ->
-                                        isRepeating c
+                                _ ->
+                                    isRepeating c
+                            )
+                                |> Expect.true "Card should be repeated if necessary"
                        )
         , fuzz3 fuzzTime (Fuzz.tuple ( fuzzAnswer, fuzzAnswer )) fuzzCard "Better answers should always result in longer (or equal) intervals and vice versa." <|
             \time ( answer1, answer2 ) card ->
@@ -447,8 +448,7 @@ suiteGetDueCardIndices =
                     overdueAmount interval reviewed =
                         toFloat (diff Hour Time.utc reviewed time) / 24 + 0.5 - Natural.toFloat interval
                 in
-                dueDeck
-                    |> List.foldl step ( firstCard, True )
+                List.foldl step ( firstCard, True ) dueDeck
                     |> Tuple.second
                     |> Expect.true "Expected a sorted deck"
         ]

@@ -343,8 +343,7 @@ suiteGetDueCardIndices =
                         (toFloat (diff Hour Time.utc lastReviewed time) / 24 + 0.5)
                             / toFloat (deck.settings.boxSpacing <| Natural.toInt box)
                 in
-                dueDeck
-                    |> List.foldl step ( firstCard, True )
+                List.foldl step ( firstCard, True ) dueDeck
                     |> Tuple.second
                     |> Expect.true "Expected a sorted deck"
         ]

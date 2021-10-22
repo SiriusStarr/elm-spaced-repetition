@@ -6,6 +6,7 @@ module SpacedRepetition.SMTwoAnki exposing
     , Answer(..), answerCardInDeck, answerCard
     , getDueCardIndices, getDueCardIndicesWithDetails
     , QueueDetails(..), getCardDetails, getLeeches
+    , Ease, TimeInterval, Days, Minutes, Natural
     )
 
 {-| This package provides everything necessary to create spaced repetition software using the algorithm used by the popular F/OSS program Anki. Anki's algorithm is a heavily-modified version of the SM-2 algorithm, which has been released for free public use when accompanied by the following notice:
@@ -125,15 +126,43 @@ If you require specific details for a single card, you may use the provided func
 
 @docs QueueDetails, getCardDetails, getLeeches
 
+
+# Opaque Types
+
+The following are exposed only so that they may be used in type annotations and
+may be created via their respective functions.
+
+@docs Ease, TimeInterval, Days, Minutes, Natural
+
 -}
 
 import Array exposing (Array)
-import Array.Extra
+import Array.Extra as ArrayX
 import Json.Decode as Decode
 import Json.Encode as Encode
-import List.Extra
+import List.Extra as ListX
 import Random
-import SpacedRepetition.Internal.SMTwoAnki exposing (Days(..), Ease, Lapses, Minutes(..), QueueStatus(..), Step, TimeInterval(..), createEase, createLapses, createStep, createTimeIntervalInDays, createTimeIntervalInMinutes, easeToFloat, lapsesToInt, minutesToDayInterval, stepToInt, timeIntervalToDays, timeIntervalToMinutes)
+import SpacedRepetition.Internal.Natural as Natural
+import SpacedRepetition.Internal.SMTwoAnki
+    exposing
+        ( QueueStatus(..)
+        , addDay
+        , adjustEase
+        , createEase
+        , decodeDayInterval
+        , decodeEase
+        , easeToFloat
+        , encodeDayInterval
+        , encodeEase
+        , encodeMinuteInterval
+        , minInterval
+        , minutesToDayInterval
+        , timeIntervalFromDays
+        , timeIntervalFromMinutes
+        , timeIntervalToDays
+        , timeIntervalToMinutes
+        )
+import SpacedRepetition.Internal.Time as Time
 import Time
 import Time.Extra exposing (Interval(..), diff)
 
@@ -147,7 +176,7 @@ import Time.Extra exposing (Interval(..), diff)
 
   - `setGraduatingInterval : Int -> AnkiSettings -> AnkiSettings` -- **Anki default: 1** Sets the initial interval (in days) a card will be scheduled for upon graduating from the learning phase. If `newSteps` is empty, all new cards will be scheduled for this interval when first encountered, regardless of answer. Note that this interval will not be fuzzed, per Anki's source. Values less than 1 will result in 1 being used.
 
-  - `setEasyInterval : Int -> AnkiSettings -> AnkiSettings` -- **Anki default: 4** Sets the initial interval (in days) a card will be scheduled for upon instantly graduating from the learning phase with an answer of `Easy`. This value is not used if `newSteps` is empty. Note that this interval will not be fuzzed, per Anki's source. Values less than 1 will result in 1 being used.\`
+  - `setEasyInterval : Int -> AnkiSettings -> AnkiSettings` -- **Anki default: 4** Sets the initial interval (in days) a card will be scheduled for upon instantly graduating from the learning phase with an answer of `Easy`. This value is not used if `newSteps` is empty. Note that this interval will not be fuzzed, per Anki's source. Values less than 1 will result in 1 being used.
 
   - `setStartingEase : Float -> AnkiSettings -> AnkiSettings` -- **Anki default: 2.5** Sets the initial ease that a card graduating from learning will have. Values less than 1.3 are ignored and result in 1.3 being used instead (as that is the minimum ease a card may have).
 
@@ -166,7 +195,7 @@ import Time.Extra exposing (Interval(..), diff)
 ## Lapses
 
   - `lapseSteps : List Int -> AnkiSettings -> AnkiSettings` -- **Anki default: [10]** Set the interval steps (in minutes) that a card must go through while relearning after a lapse. Answering `Again` or `Hard` will return a card to step 0. Answering `Easy` will instantly graduate a card back to review. Answering `Good` will advance the card 1 step. If this list is empty, cards will instantly graduate the first time they are reviewed, regardless of the `Answer`.
-  - `lapseNewInterval : Float -> AnkiSettings -> AnkiSettings` -- **Anki default: 0.0** Set a multiplier for the pre-lapse interval to determine the new interval after graduating a card back from re-learning. Values less than 0.0 are ignored Note that this interval is not fuzzed, per Anki's source.
+  - `lapseNewInterval : Float -> AnkiSettings -> AnkiSettings` -- **Anki default: 0.0** Set a multiplier for the pre-lapse interval to determine the new interval after graduating a card back from re-learning. Values less than 0.0 are ignored. **Note that this interval is not fuzzed, per Anki's source.**
   - `lapseMinimumInterval : Int -> AnkiSettings -> AnkiSettings` -- **Anki default: 1** Set a minimum bound on the previous option, with lapsed cards getting a new interval of at least this value. Answers less than 1 are ignored.
   - `leechThreshold : Int -> AnkiSettings -> AnkiSettings` -- **Anki default: 8** Set the number of lapses before a card is considered a "leech." `getDueCardIndices` will return the leech status of each card in the deck. Additionally, `getLeeches` will return all leeches in a deck (regardless of due status). Setting this value to less than or equal to 0 turns off leeches entirely.
 
@@ -176,7 +205,7 @@ type alias AnkiSettings =
       newSteps : List (TimeInterval Minutes)
     , graduatingInterval : TimeInterval Days
     , easyInterval : TimeInterval Days
-    , startingEase : Float
+    , startingEase : Ease
 
     -- Review Settings
     , easyBonus : Float
@@ -188,7 +217,7 @@ type alias AnkiSettings =
     , lapseSteps : List (TimeInterval Minutes)
     , lapseNewInterval : Float
     , lapseMinimumInterval : TimeInterval Days
-    , leechThreshold : Int
+    , leechThreshold : Natural
     }
 
 
@@ -219,20 +248,20 @@ createSettings : AnkiSettings
 createSettings =
     -- Anki defaults
     { newSteps =
-        [ createTimeIntervalInMinutes 1
-        , createTimeIntervalInMinutes 10
+        [ timeIntervalFromMinutes 1
+        , timeIntervalFromMinutes 10
         ]
-    , graduatingInterval = createTimeIntervalInDays 1
-    , easyInterval = createTimeIntervalInDays 4
-    , startingEase = 2.5
+    , graduatingInterval = timeIntervalFromDays 1
+    , easyInterval = timeIntervalFromDays 4
+    , startingEase = createEase 2.5
     , easyBonus = 1.3
-    , intervalModifier = 1.0
-    , maximumInterval = createTimeIntervalInDays 36500
+    , intervalModifier = 1
+    , maximumInterval = timeIntervalFromDays 36500
     , hardInterval = 1.2
-    , lapseSteps = [ createTimeIntervalInMinutes 10 ]
-    , lapseNewInterval = 0.0
-    , lapseMinimumInterval = createTimeIntervalInDays 1
-    , leechThreshold = 8
+    , lapseSteps = [ timeIntervalFromMinutes 10 ]
+    , lapseNewInterval = 0
+    , lapseMinimumInterval = timeIntervalFromDays 1
+    , leechThreshold = Natural.eight
     }
 
 
@@ -240,28 +269,28 @@ createSettings =
 -}
 setNewSteps : List Int -> AnkiSettings -> AnkiSettings
 setNewSteps l s =
-    { s | newSteps = List.map createTimeIntervalInMinutes l }
+    { s | newSteps = List.map timeIntervalFromMinutes l }
 
 
 {-| `setGraduatingInterval` sets the initial interval (in days) a card will be scheduled for upon graduating from the learning phase. If `newSteps` is empty, all new cards will be scheduled for this interval when first encountered, regardless of answer. Note that this interval will not be fuzzed, per Anki's source. Values less than 1 will result in 1 being used.
 -}
 setGraduatingInterval : Int -> AnkiSettings -> AnkiSettings
 setGraduatingInterval i s =
-    { s | graduatingInterval = createTimeIntervalInDays i }
+    { s | graduatingInterval = timeIntervalFromDays i }
 
 
 {-| `setEasyInterval` sets the initial interval (in days) a card will be scheduled for upon instantly graduating from the learning phase with an answer of `Easy`. This value is not used if `newSteps` is empty. Note that this interval will not be fuzzed, per Anki's source. Values less than 1 will result in 1 being used.
 -}
 setEasyInterval : Int -> AnkiSettings -> AnkiSettings
 setEasyInterval i s =
-    { s | easyInterval = createTimeIntervalInDays i }
+    { s | easyInterval = timeIntervalFromDays i }
 
 
 {-| `setStartingEase` sets the initial ease that a card graduating from learning will have. Values less than 1.3 are ignored and result in 1.3 being used instead (as that is the minimum ease a card may have).
 -}
 setStartingEase : Float -> AnkiSettings -> AnkiSettings
 setStartingEase f s =
-    { s | startingEase = f }
+    { s | startingEase = createEase f }
 
 
 {-| `setEasyBonus` sets the multiplier for the next interval of a card that was answered `Easy` (i.e. additional interval length over merely answering `Good`. Values less than 1.0 are ignored.
@@ -282,10 +311,10 @@ setIntervalModifier f s =
 -}
 setMaximumInterval : Int -> AnkiSettings -> AnkiSettings
 setMaximumInterval i s =
-    { s | maximumInterval = createTimeIntervalInDays i }
+    { s | maximumInterval = timeIntervalFromDays i }
 
 
-{-| `setHardInterval` sets the multiplier applied to the previous interval when `Hard` is answered to a card. Note that intervals are forced to be at least 1 day longer than the previous one. As such, values <= 1 will have no effect. Additionally, values of `hardInterval` that would result in a longer interval than that from answering `Good` (i.e. that are larger than the ease of the card) are ignored, with ease being used instead. As such, it is probably good practice to keep this value <= 1.3, as that is the lower limit on ease.
+{-| `setHardInterval` sets the multiplier applied to the previous interval when `Hard` is answered to a card. Note that intervals are forced to be at least 1 day longer than the previous one (before fuzzing). As such, values <= 1 will have no effect. Additionally, values of `hardInterval` that would result in a longer interval than that from answering `Good` (i.e. that are larger than the ease of the card) are ignored, with ease being used instead. As such, it is probably good practice to keep this value <= 1.3, as that is the lower limit on ease.
 -}
 setHardInterval : Float -> AnkiSettings -> AnkiSettings
 setHardInterval f s =
@@ -296,7 +325,7 @@ setHardInterval f s =
 -}
 setLapseSteps : List Int -> AnkiSettings -> AnkiSettings
 setLapseSteps l s =
-    { s | lapseSteps = List.map createTimeIntervalInMinutes l }
+    { s | lapseSteps = List.map timeIntervalFromMinutes l }
 
 
 {-| `setLapseNewInterval` sets a multiplier for the pre-lapse interval to determine the new interval after graduating a card back from re-learning. Values less than 0.0 are ignored Note that this interval is not fuzzed, per Anki's source.
@@ -310,14 +339,14 @@ setLapseNewInterval f s =
 -}
 setLapseMinimumInterval : Int -> AnkiSettings -> AnkiSettings
 setLapseMinimumInterval i s =
-    { s | lapseMinimumInterval = createTimeIntervalInDays i }
+    { s | lapseMinimumInterval = timeIntervalFromDays i }
 
 
 {-| `setLeechThreshold` sets the number of lapses before a card is considered a "leech." `getDueCardIndices` will return the leech status of each card in the deck. Additionally, `getLeeches` will return all leeches in a deck (regardless of due status). Setting this value to less than or equal to 0 turns off leeches entirely.
 -}
 setLeechThreshold : Int -> AnkiSettings -> AnkiSettings
 setLeechThreshold i s =
-    { s | leechThreshold = i }
+    { s | leechThreshold = Maybe.withDefault Natural.nil <| Natural.fromInt i }
 
 
 {-| A `Card` represents a single question or unit of knowledge the user will review. In general terms, each would represent a single flashcard. `Card` is defined as an extensible record; as such, whatever necessary custom fields for a use case may simply be included in the record, e.g.:
@@ -364,27 +393,27 @@ encoderSRSData data =
         New ->
             Encode.null
 
-        Learning step lastReviewed ->
+        Learning { lastReviewed, step } ->
             Encode.object
-                [ ( "step", stepEncoder step )
-                , ( "lastReviewed", Encode.int <| Time.posixToMillis lastReviewed // 1000 ) -- Encode time in seconds; loss of precision is acceptable
+                [ ( "lastReviewed", Time.encode lastReviewed )
+                , ( "step", Natural.encode step )
                 ]
 
-        Lapsed ease step interval lastReviewed lapses ->
+        Review { ease, interval, lastReviewed, lapses } ->
             Encode.object
-                [ ( "step", stepEncoder step )
-                , ( "oldInterval", intervalEncoder interval )
-                , ( "lastReviewed", Encode.int <| Time.posixToMillis lastReviewed // 1000 ) -- Encode time in seconds; loss of precision is acceptable
-                , ( "ease", easeEncoder ease )
-                , ( "lapses", lapsesEncoder lapses )
+                [ ( "ease", encodeEase ease )
+                , ( "interval", encodeDayInterval interval )
+                , ( "lapses", Natural.encode lapses )
+                , ( "lastReviewed", Time.encode lastReviewed )
                 ]
 
-        Review ease interval lastReviewed lapses ->
+        Lapsed { ease, oldInterval, lastReviewed, step, lapses } ->
             Encode.object
-                [ ( "interval", intervalEncoder interval )
-                , ( "lastReviewed", Encode.int <| Time.posixToMillis lastReviewed // 1000 ) -- Encode time in seconds; loss of precision is acceptable
-                , ( "ease", easeEncoder ease )
-                , ( "lapses", lapsesEncoder lapses )
+                [ ( "ease", encodeEase ease )
+                , ( "lapses", Natural.encode lapses )
+                , ( "lastReviewed", Time.encode lastReviewed )
+                , ( "oldInterval", encodeDayInterval oldInterval )
+                , ( "step", Natural.encode step )
                 ]
 
 
@@ -394,20 +423,43 @@ decoderSRSData : Decode.Decoder SRSData
 decoderSRSData =
     Decode.oneOf
         [ Decode.null New
-        , Decode.map5 Lapsed
-            (Decode.map createEase <| Decode.field "ease" Decode.float)
-            (Decode.map createStep <| Decode.field "step" Decode.int)
-            (Decode.map TimeInterval <| Decode.field "oldInterval" Decode.int)
-            (Decode.map (\t -> Time.millisToPosix <| t * 1000) <| Decode.field "lastReviewed" Decode.int)
-            (Decode.map createLapses <| Decode.field "lapses" Decode.int)
-        , Decode.map2 Learning
-            (Decode.map createStep <| Decode.field "step" Decode.int)
-            (Decode.map (\t -> Time.millisToPosix <| t * 1000) <| Decode.field "lastReviewed" Decode.int)
-        , Decode.map4 Review
-            (Decode.map createEase <| Decode.field "ease" Decode.float)
-            (Decode.map TimeInterval <| Decode.field "interval" Decode.int)
-            (Decode.map (\t -> Time.millisToPosix <| t * 1000) <| Decode.field "lastReviewed" Decode.int)
-            (Decode.map createLapses <| Decode.field "lapses" Decode.int)
+        , Decode.map5
+            (\ease lapses lastReviewed oldInterval step ->
+                Lapsed
+                    { ease = ease
+                    , oldInterval = oldInterval
+                    , lastReviewed = lastReviewed
+                    , step = step
+                    , lapses = lapses
+                    }
+            )
+            (Decode.field "ease" decodeEase)
+            (Decode.field "lapses" Natural.decode)
+            (Decode.field "lastReviewed" Time.decode)
+            (Decode.field "oldInterval" decodeDayInterval)
+            (Decode.field "step" Natural.decode)
+        , Decode.map2
+            (\lastReviewed step ->
+                Learning
+                    { lastReviewed = lastReviewed
+                    , step = step
+                    }
+            )
+            (Decode.field "lastReviewed" Time.decode)
+            (Decode.field "step" Natural.decode)
+        , Decode.map4
+            (\ease interval lapses lastReviewed ->
+                Review
+                    { ease = ease
+                    , interval = interval
+                    , lastReviewed = lastReviewed
+                    , lapses = lapses
+                    }
+            )
+            (Decode.field "ease" decodeEase)
+            (Decode.field "interval" decodeDayInterval)
+            (Decode.field "lapses" Natural.decode)
+            (Decode.field "lastReviewed" Time.decode)
         ]
 
 
@@ -416,18 +468,26 @@ decoderSRSData =
 encoderAnkiSettings : AnkiSettings -> Encode.Value
 encoderAnkiSettings settings =
     Encode.object
-        [ ( "newSteps", Encode.list Encode.int <| List.map timeIntervalToMinutes settings.newSteps )
+        [ ( "newSteps", Encode.list encodeMinuteInterval settings.newSteps )
+
+        -- This does not use the canonical encoder `encodeDayInterval` so that it mirrors `setGraduateInterval`
         , ( "graduatingInterval", Encode.int <| timeIntervalToDays settings.graduatingInterval )
+
+        -- This does not use the canonical encoder `encodeDayInterval` so that it mirrors `setEasyInterval`
         , ( "easyInterval", Encode.int <| timeIntervalToDays settings.easyInterval )
-        , ( "startingEase", Encode.float settings.startingEase )
+        , ( "startingEase", encodeEase settings.startingEase )
         , ( "easyBonus", Encode.float settings.easyBonus )
         , ( "intervalModifier", Encode.float settings.intervalModifier )
+
+        -- This does not use the canonical encoder `encodeDayInterval` so that it mirrors `setMaximumInterval`
         , ( "maximumInterval", Encode.int <| timeIntervalToDays settings.maximumInterval )
         , ( "hardInterval", Encode.float settings.hardInterval )
-        , ( "lapseSteps", Encode.list Encode.int <| List.map timeIntervalToMinutes settings.lapseSteps )
+        , ( "lapseSteps", Encode.list encodeMinuteInterval settings.lapseSteps )
         , ( "lapseNewInterval", Encode.float settings.lapseNewInterval )
+
+        -- This does not use the canonical encoder `encodeDayInterval` so that it mirrors `setLapseMinimumInterval`
         , ( "lapseMinimumInterval", Encode.int <| timeIntervalToDays settings.lapseMinimumInterval )
-        , ( "leechThreshold", Encode.int settings.leechThreshold )
+        , ( "leechThreshold", Encode.int <| Natural.toInt settings.leechThreshold )
         ]
 
 
@@ -468,7 +528,7 @@ decoderAnkiSettings =
 -}
 type Answer
     = Again
-    | Hard -- Synonym for Again when learning
+    | Hard
     | Good
     | Easy
 
@@ -479,7 +539,7 @@ answerCardInDeck : Time.Posix -> Answer -> Int -> Deck a b -> Deck a b
 answerCardInDeck time answer i deck =
     { deck
         | cards =
-            Array.Extra.update i (answerCard time answer deck.settings) deck.cards
+            ArrayX.update i (answerCard time answer deck.settings) deck.cards
     }
 
 
@@ -489,6 +549,275 @@ answerCard : Time.Posix -> Answer -> AnkiSettings -> Card a -> Card a
 answerCard time answer settings card =
     updateEase answer card
         |> scheduleCard settings time answer
+
+
+{-| Given settings, the current time, and an answer quality, schedule a card for
+future review, updating its queue status.
+-}
+scheduleCard : AnkiSettings -> Time.Posix -> Answer -> Card a -> Card a
+scheduleCard settings time answer card =
+    let
+        effInterval : TimeInterval Minutes
+        effInterval =
+            -- The actual interval the card went without being reviewed.
+            effectiveInterval settings answer time card
+
+        review : Ease -> Natural -> TimeInterval Days -> SRSData
+        review ease lapses interval =
+            Review
+                { ease = ease
+                , interval = minInterval settings.maximumInterval interval
+                , lastReviewed = time
+                , lapses = lapses
+                }
+
+        scaleReviewInterval : Float -> TimeInterval Minutes -> TimeInterval Days
+        scaleReviewInterval f oldInterval =
+            -- Increase interval by a factor f and ensure it's at least 1 day longer
+            scaleIntervalWithMinimum (f * settings.intervalModifier) (addDay oldInterval) oldInterval
+
+        setStep : Natural -> SRSData
+        setStep step =
+            case card.srsData of
+                Review _ ->
+                    -- This should never happen and is here to fail the test suite.
+                    New
+
+                Lapsed ({ ease, oldInterval, lapses } as r) ->
+                    if Natural.toInt step >= List.length settings.lapseSteps then
+                        review ease
+                            lapses
+                            (scaleIntervalWithMinimum settings.lapseNewInterval
+                                settings.lapseMinimumInterval
+                                oldInterval
+                            )
+
+                    else
+                        Lapsed
+                            { r
+                                | lastReviewed = time
+                                , step = step
+                            }
+
+                _ ->
+                    if Natural.toInt step >= List.length settings.newSteps then
+                        review
+                            settings.startingEase
+                            Natural.nil
+                            settings.graduatingInterval
+
+                    else
+                        Learning
+                            { lastReviewed = time
+                            , step = step
+                            }
+    in
+    (case ( card.srsData, answer ) of
+        ( New, _ ) ->
+            setStep Natural.nil
+
+        ( Learning { step }, Good ) ->
+            setStep <| Natural.succ step
+
+        ( Learning _, Easy ) ->
+            -- Instantly graduate to review if answer is easy
+            review settings.startingEase
+                Natural.nil
+                settings.easyInterval
+
+        ( Learning _, _ ) ->
+            setStep Natural.nil
+
+        ( Review { ease, interval, lapses }, Again ) ->
+            Lapsed
+                { ease = ease
+                , oldInterval = interval
+                , lastReviewed = time
+                , step = Natural.nil
+                , lapses = Natural.succ lapses
+                }
+
+        ( Review { ease, lapses }, Hard ) ->
+            review ease
+                lapses
+                (scaleReviewInterval
+                    (min (easeToFloat ease) settings.hardInterval)
+                    effInterval
+                    |> fuzzInterval time
+                )
+
+        ( Review { ease, lapses }, Good ) ->
+            review ease
+                lapses
+                (scaleReviewInterval (easeToFloat ease) effInterval
+                    |> fuzzInterval time
+                )
+
+        ( Review { ease, lapses }, Easy ) ->
+            review ease
+                lapses
+                (scaleReviewInterval (easeToFloat ease * max 1 settings.easyBonus) effInterval
+                    |> fuzzInterval time
+                )
+
+        ( Lapsed { step }, Good ) ->
+            setStep <| Natural.succ step
+
+        ( Lapsed { ease, oldInterval, lapses }, Easy ) ->
+            -- Instantly graduate back to review if answer is easy
+            review ease
+                lapses
+                (scaleIntervalWithMinimum settings.lapseNewInterval
+                    settings.lapseMinimumInterval
+                    oldInterval
+                )
+
+        ( Lapsed _, _ ) ->
+            setStep Natural.nil
+    )
+        |> (\newStatus ->
+                { card | srsData = newStatus }
+           )
+
+
+{-| Given settings, an answer quality, the current time, and a card, determine
+the interval that will be used to determine the next interval for the card,
+taking into account the amount by which it is overdue (in full for an `Easy`
+answer or in part for a `Good` answer).
+-}
+effectiveInterval : AnkiSettings -> Answer -> Time.Posix -> Card a -> TimeInterval Minutes
+effectiveInterval settings answer time card =
+    let
+        interval : Int
+        interval =
+            getCurrentIntervalInMinutes settings card
+    in
+    (case answer of
+        Again ->
+            0
+
+        Hard ->
+            interval
+
+        Good ->
+            overdueAmount settings time card
+                |> Tuple.second
+                |> (\minutesOverdue -> minutesOverdue // 2)
+                |> (+) interval
+                |> max interval
+
+        Easy ->
+            overdueAmount settings time card
+                |> Tuple.second
+                |> (+) interval
+                |> max interval
+    )
+        |> timeIntervalFromMinutes
+
+
+{-| Given the current time as a seed, fuzz a time interval by a random amount as
+follows:
+
+  - 1 day -- Do not fuzz.
+  - 2 days -- Fuzz to 2 or 3 days.
+  - < 7 days -- Fuzz by plus or minus 25%.
+  - < 30 days -- Fuzz by plus or minus 15%.
+  - Otherwise -- Fuzz by plus or minus 5%.
+
+-}
+fuzzInterval : Time.Posix -> TimeInterval Days -> TimeInterval Days
+fuzzInterval time interval =
+    Random.step (fuzzedIntervalGenerator interval)
+        (Random.initialSeed <| Time.posixToMillis time)
+        |> Tuple.first
+
+
+{-| A random generator that can fuzz a provided time interval by a random
+amount as follows:
+
+  - 1 day -- Do not fuzz.
+  - 2 days -- Fuzz to 2 or 3 days.
+  - < 7 days -- Fuzz by plus or minus 25%.
+  - < 30 days -- Fuzz by plus or minus 15%.
+  - Otherwise -- Fuzz by plus or minus 5%.
+
+-}
+fuzzedIntervalGenerator : TimeInterval Days -> Random.Generator (TimeInterval Days)
+fuzzedIntervalGenerator interval =
+    let
+        ( minInterval, maxInterval ) =
+            -- These are the fuzz amounts per Anki's source
+            case compare i 2 of
+                LT ->
+                    ( 1, 1 )
+
+                EQ ->
+                    ( 2, 3 )
+
+                GT ->
+                    let
+                        fuzz : Int
+                        fuzz =
+                            if i < 7 then
+                                round << max 1 <| toFloat i * 0.25
+
+                            else if i < 30 then
+                                round << max 2 <| toFloat i * 0.15
+
+                            else
+                                round << max 4 <| toFloat i * 0.05
+                    in
+                    ( i - fuzz, i + fuzz )
+
+        i : Int
+        i =
+            timeIntervalToDays interval
+    in
+    Random.map timeIntervalFromDays <| Random.int minInterval maxInterval
+
+
+{-| Given a scaling factor and a minimum interval, scale another interval by
+that factor and ensure it is at least as much as the minimum.
+-}
+scaleIntervalWithMinimum : Float -> TimeInterval a -> TimeInterval b -> TimeInterval Days
+scaleIntervalWithMinimum f minInterval oldInterval =
+    -- This magic number is max int; truncate does not play well with larger values.
+    timeIntervalToMinutes oldInterval
+        |> toFloat
+        |> (*) f
+        |> min 2147483647
+        |> truncate
+        |> max (timeIntervalToMinutes minInterval)
+        |> minutesToDayInterval
+
+
+{-| Given an answer quality, update the ease of a card.
+-}
+updateEase : Answer -> Card a -> Card a
+updateEase answer card =
+    case card.srsData of
+        Review r ->
+            let
+                adjEase : Ease -> Ease
+                adjEase =
+                    case answer of
+                        Again ->
+                            adjustEase -0.2
+
+                        Hard ->
+                            adjustEase -0.15
+
+                        Good ->
+                            identity
+
+                        Easy ->
+                            adjustEase 0.15
+            in
+            { card | srsData = Review { r | ease = adjEase r.ease } }
+
+        _ ->
+            -- Ease ONLY gets updated when in Review phase
+            card
 
 
 {-| `getDueCardIndices` takes the current time (in the `Time.Posix` format returned by the `now` task of the core `Time` module) and a `Deck` and returns the indices of the subset of the `Deck` that is due for review. The returned indices will be sorted in the following order:
@@ -513,8 +842,8 @@ getDueCardIndices time deck =
         |> List.filter
             (isDue deck.settings time << Tuple.second)
         |> List.sortWith
-            (\c1 c2 -> sortDue deck.settings time (Tuple.second c1) (Tuple.second c2))
-        |> List.Extra.reverseMap Tuple.first
+            (\( _, c1 ) ( _, c2 ) -> compareDue deck.settings time c1 c2)
+        |> ListX.reverseMap Tuple.first
 
 
 {-| `getDueCardIndicesWithDetails` takes the current time (in the `Time.Posix` format returned by the `now` task of the core `Time` module) and a `Deck` and returns the subset of the `Deck` that is due for review as a list of records, providing their index, which queue they are currently in (e.g. whether they are being learned or reviewed) along with any relevant queue details, and whether or not they are leeches. The returned indices will be sorted in the following order:
@@ -536,20 +865,70 @@ getDueCardIndices time deck =
 getDueCardIndicesWithDetails :
     Time.Posix
     -> Deck a b
-    -> List { index : Int, queueDetails : QueueDetails, isLeech : Bool }
+    -> List { index : Int, isLeech : Bool, queueDetails : QueueDetails }
 getDueCardIndicesWithDetails time deck =
     Array.toIndexedList deck.cards
         |> List.filter
             (isDue deck.settings time << Tuple.second)
         |> List.sortWith
-            (\c1 c2 -> sortDue deck.settings time (Tuple.second c1) (Tuple.second c2))
-        |> List.Extra.reverseMap
+            (\( _, c1 ) ( _, c2 ) -> compareDue deck.settings time c1 c2)
+        |> ListX.reverseMap
             (\( index, card ) ->
                 { index = index
-                , queueDetails = getQueueDetails deck.settings card
                 , isLeech = isLeech deck.settings card
+                , queueDetails = getQueueDetails deck.settings card
                 }
             )
+
+
+{-| `QueueDetails` represents the current status of a card.
+
+  - `NewCard` -- A card that has never before been studied (encountered) by the user.
+
+  - `LearningQueue {...}` -- A card that is in the initial learning queue, progressing through the steps specified in `AnkiSettings.newSteps`.
+      - `lastReviewed : Time.Posix` -- The date and time the card was last reviewed.
+      - `intervalInMinutes : Int` -- The interval, in minutes from the date last seen, that the card is slated for review in.
+
+  - `ReviewQueue {...}` -- A card that is being reviewed for retention.
+      - `lastReviewed : Time.Posix` -- The date and time the card was last reviewed.
+      - `intervalInDays : Int` -- The interval, in days from the date last seen, that the card was slated for review in.
+      - `lapses : Int` -- The number of times the card has "lapsed," i.e. been forgotten/incorrectly answered by the user.
+
+  - `LapsedQueue {...}` -- A card that has lapsed, i.e. one that was being reviewed but was answered incorrectly and is now being re-learned.
+      - `lastReviewed : Time.Posix` -- The date and time the card was last reviewed.
+      - `formerIntervalInDays : Int` -- The interval, in days from the date last seen, that the card was slated for review in prior to last being forgotten/ answered incorrectly.
+      - `intervalInMinutes : Int` -- The interval, in minutes from the date last seen, that the card is slated for review in.
+      - `lapses : Int` -- The number of times the card has "lapsed," i.e. been forgotten/incorrectly answered by the user.
+
+-}
+type QueueDetails
+    = NewCard
+    | LearningQueue
+        { lastReviewed : Time.Posix
+        , intervalInMinutes : Int
+        }
+    | ReviewQueue
+        { lastReviewed : Time.Posix
+        , intervalInDays : Int
+        , lapses : Int
+        }
+    | LapsedQueue
+        { lastReviewed : Time.Posix
+        , formerIntervalInDays : Int
+        , intervalInMinutes : Int
+        , lapses : Int
+        }
+
+
+{-| `getCardDetails` returns the current queue status for a given card and whether or not it is a leech. If you require this for every due card, simply use `getDueCardIndicesWithDetails`.
+-}
+getCardDetails : AnkiSettings -> Card a -> { isLeech : Bool, queueDetails : QueueDetails }
+getCardDetails s c =
+    { isLeech = isLeech s c, queueDetails = getQueueDetails s c }
+
+
+
+-- * Non-exposed only below here
 
 
 {-| `getLeeches` takes a `Deck` and returns the indices of the subset of the `Deck` that are leeches (as `List Int`). The returned indices will be sorted in the following order:
@@ -564,119 +943,43 @@ getLeeches deck =
         |> List.filter (isLeech deck.settings << Tuple.second)
         |> List.sortWith
             (\( _, c1 ) ( _, c2 ) -> compare (numberOfLapses c1) (numberOfLapses c2))
-        |> List.Extra.reverseMap Tuple.first
+        |> ListX.reverseMap Tuple.first
 
 
-{-| `QueueDetails` represents the current status of a card.
-
-  - `NewCard` -- A card that has never before been studied (encountered) by the user.
-
-  - `LearningQueue {...}` -- A card that is in the initial learning queue, progressing through the steps specified in `AnkiSettings.newSteps`.
-      - `lastSeen : Time.Posix` -- The date and time the card was last reviewed.
-      - `intervalInMinutes : Int` -- The interval, in minutes from the date last seen, that the card is slated for review in.
-
-  - `ReviewQueue {...}` -- A card that is being reviewed for retention.
-      - `lastSeen : Time.Posix` -- The date and time the card was last reviewed.
-      - `intervalInDays : Int` -- The interval, in days from the date last seen, that the card was slated for review in.
-      - `lapses : Int` -- The number of times the card has "lapsed," i.e. been forgotten/incorrectly answered by the user.
-
-  - `LapsedQueue {...}` -- A card that has lapsed, i.e. one that was being reviewed but was answered incorrectly and is now being re-learned.
-      - `lastSeen : Time.Posix` -- The date and time the card was last reviewed.
-      - `reviewIntervalInDays : Int` -- The interval, in days from the date last seen, that the card was slated for review in prior to last being forgotten/ answered incorrectly.
-      - `intervalInMinutes : Int` -- The interval, in minutes from the date last seen, that the card is slated for review in.
-      - `lapses : Int` -- The number of times the card has "lapsed," i.e. been forgotten/incorrectly answered by the user.
-
+{-| Opaque type. You don't need it, except maybe in type signatures.
 -}
-type QueueDetails
-    = NewCard
-    | LearningQueue
-        { lastSeen : Time.Posix
-        , intervalInMinutes : Int
-        }
-    | ReviewQueue
-        { lastSeen : Time.Posix
-        , intervalInDays : Int
-        , lapses : Int
-        }
-    | LapsedQueue
-        { lastSeen : Time.Posix
-        , formerIntervalInDays : Int
-        , intervalInMinutes : Int
-        , lapses : Int
-        }
+type alias Ease =
+    SpacedRepetition.Internal.SMTwoAnki.Ease
 
 
-{-| `getCardDetails` returns the current queue status for a given card and whether or not it is a leech. If you require this for every due card, simply use `getDueCardIndicesWithDetails`.
+{-| Opaque type. You don't need it, except maybe in type signatures.
 -}
-getCardDetails : AnkiSettings -> Card a -> { queueDetails : QueueDetails, isLeech : Bool }
-getCardDetails s c =
-    { queueDetails = getQueueDetails s c, isLeech = isLeech s c }
+type alias TimeInterval a =
+    SpacedRepetition.Internal.SMTwoAnki.TimeInterval a
 
 
-
--- * Non-exposed only below here
-
-
-numberOfLapses : Card a -> Int
-numberOfLapses card =
-    case card.srsData of
-        Review _ _ _ lapses ->
-            lapsesToInt lapses
-
-        Lapsed _ _ _ _ lapses ->
-            lapsesToInt lapses
-
-        _ ->
-            0
+{-| Opaque type. You don't need it, except maybe in type signatures.
+-}
+type alias Days =
+    SpacedRepetition.Internal.SMTwoAnki.Days
 
 
-isLeech : AnkiSettings -> Card a -> Bool
-isLeech settings card =
-    if settings.leechThreshold <= 0 then
-        False
-
-    else
-        case card.srsData of
-            Review _ _ _ lapses ->
-                lapsesToInt lapses >= settings.leechThreshold
-
-            Lapsed _ _ _ _ lapses ->
-                lapsesToInt lapses >= settings.leechThreshold
-
-            _ ->
-                False
+{-| Opaque type. You don't need it, except maybe in type signatures.
+-}
+type alias Minutes =
+    SpacedRepetition.Internal.SMTwoAnki.Minutes
 
 
-getQueueDetails : AnkiSettings -> Card a -> QueueDetails
-getQueueDetails s c =
-    case c.srsData of
-        New ->
-            NewCard
-
-        Learning _ lastReviewed ->
-            LearningQueue
-                { lastSeen = lastReviewed
-                , intervalInMinutes = getCurrentIntervalInMinutes s c
-                }
-
-        Review _ interval lastReviewed lapses ->
-            ReviewQueue
-                { lastSeen = lastReviewed
-                , intervalInDays = timeIntervalToDays interval
-                , lapses = lapsesToInt lapses
-                }
-
-        Lapsed _ _ lastInterval lastReviewed lapses ->
-            LapsedQueue
-                { lastSeen = lastReviewed
-                , formerIntervalInDays = timeIntervalToDays lastInterval
-                , intervalInMinutes = getCurrentIntervalInMinutes s c
-                , lapses = lapsesToInt lapses
-                }
+{-| Opaque type. You don't need it, except maybe in type signatures.
+-}
+type alias Natural =
+    Natural.Natural
 
 
-sortDue : AnkiSettings -> Time.Posix -> Card a -> Card a -> Order
-sortDue settings time c1 c2 =
+{-| Compare the "due"-ness of two cards at a given time.
+-}
+compareDue : AnkiSettings -> Time.Posix -> Card a -> Card a -> Order
+compareDue settings time c1 c2 =
     case ( c1.srsData, c2.srsData ) of
         ( New, New ) ->
             EQ
@@ -687,7 +990,7 @@ sortDue settings time c1 c2 =
         ( _, New ) ->
             GT
 
-        ( Learning _ _, Learning _ _ ) ->
+        ( Learning _, Learning _ ) ->
             let
                 ( overdueAmt1, _ ) =
                     overdueAmount settings time c1
@@ -695,19 +998,15 @@ sortDue settings time c1 c2 =
                 ( overdueAmt2, _ ) =
                     overdueAmount settings time c2
             in
-            if overdueAmt1 >= overdueAmt2 then
-                GT
+            compare overdueAmt1 overdueAmt2
 
-            else
-                LT
-
-        ( Learning _ _, _ ) ->
+        ( Learning _, _ ) ->
             LT
 
-        ( _, Learning _ _ ) ->
+        ( _, Learning _ ) ->
             GT
 
-        ( Review _ _ _ _, Review _ _ _ _ ) ->
+        ( Review _, Review _ ) ->
             let
                 ( overdueAmt1, _ ) =
                     overdueAmount settings time c1
@@ -715,19 +1014,15 @@ sortDue settings time c1 c2 =
                 ( overdueAmt2, _ ) =
                     overdueAmount settings time c2
             in
-            if overdueAmt1 >= overdueAmt2 then
-                GT
+            compare overdueAmt1 overdueAmt2
 
-            else
-                LT
-
-        ( Review _ _ _ _, _ ) ->
+        ( Review _, _ ) ->
             LT
 
-        ( _, Review _ _ _ _ ) ->
+        ( _, Review _ ) ->
             GT
 
-        ( Lapsed _ _ _ _ _, Lapsed _ _ _ _ _ ) ->
+        ( Lapsed _, Lapsed _ ) ->
             let
                 ( overdueAmt1, _ ) =
                     overdueAmount settings time c1
@@ -735,13 +1030,65 @@ sortDue settings time c1 c2 =
                 ( overdueAmt2, _ ) =
                     overdueAmount settings time c2
             in
-            if overdueAmt1 >= overdueAmt2 then
-                GT
-
-            else
-                LT
+            compare overdueAmt1 overdueAmt2
 
 
+{-| Return the currently-scheduled inter-review interval of a card in minutes.
+-}
+getCurrentIntervalInMinutes : AnkiSettings -> Card a -> Int
+getCurrentIntervalInMinutes settings { srsData } =
+    case srsData of
+        New ->
+            0
+
+        Learning { step } ->
+            ListX.getAt (Natural.toInt step) settings.newSteps
+                |> Maybe.map timeIntervalToMinutes
+                -- If there are no steps, the card should immediately be due.
+                |> Maybe.withDefault 1
+
+        Review { interval } ->
+            timeIntervalToMinutes interval
+
+        Lapsed { step } ->
+            ListX.getAt (Natural.toInt step) settings.lapseSteps
+                |> Maybe.map timeIntervalToMinutes
+                -- If there are no steps, the card should immediately be due.
+                |> Maybe.withDefault 1
+
+
+{-| Given a card, return its review status.
+-}
+getQueueDetails : AnkiSettings -> Card a -> QueueDetails
+getQueueDetails s c =
+    case c.srsData of
+        New ->
+            NewCard
+
+        Learning { lastReviewed } ->
+            LearningQueue
+                { lastReviewed = lastReviewed
+                , intervalInMinutes = getCurrentIntervalInMinutes s c
+                }
+
+        Review { interval, lastReviewed, lapses } ->
+            ReviewQueue
+                { lastReviewed = lastReviewed
+                , intervalInDays = timeIntervalToDays interval
+                , lapses = Natural.toInt lapses
+                }
+
+        Lapsed { oldInterval, lastReviewed, lapses } ->
+            LapsedQueue
+                { lastReviewed = lastReviewed
+                , formerIntervalInDays = timeIntervalToDays oldInterval
+                , intervalInMinutes = getCurrentIntervalInMinutes s c
+                , lapses = Natural.toInt lapses
+                }
+
+
+{-| Check if a card is currently due to be studied.
+-}
 isDue : AnkiSettings -> Time.Posix -> Card a -> Bool
 isDue settings time card =
     case card.srsData of
@@ -756,340 +1103,65 @@ isDue settings time card =
             minutesOverdue >= -20
 
 
-intervalToScale : AnkiSettings -> Answer -> Time.Posix -> Card a -> Int
-intervalToScale settings answer time card =
-    let
-        interval =
-            getCurrentIntervalInMinutes settings card
-    in
-    case answer of
-        Again ->
+{-| Get whether or not a card is a "leech."
+-}
+isLeech : AnkiSettings -> Card a -> Bool
+isLeech settings card =
+    if settings.leechThreshold == Natural.nil then
+        False
+
+    else
+        numberOfLapses card >= Natural.toInt settings.leechThreshold
+
+
+{-| Get the number of times a card has been forgotten from a card.
+-}
+numberOfLapses : Card a -> Int
+numberOfLapses card =
+    case card.srsData of
+        Review { lapses } ->
+            Natural.toInt lapses
+
+        Lapsed { lapses } ->
+            Natural.toInt lapses
+
+        _ ->
             0
 
-        Hard ->
-            interval
 
-        Good ->
-            overdueAmount settings time card
-                |> Tuple.second
-                |> (\minutesOverdue -> minutesOverdue // 2)
-                |> (+) interval
-                |> max interval
-
-        Easy ->
-            overdueAmount settings time card
-                |> Tuple.second
-                |> (+) interval
-                |> max interval
-
-
+{-| Given settings and the current time, determine what proportion overdue a
+card is, i.e. `0.9` is 90% of the way to being overdue and `2` is the interval again overdue, and also the absolute number of minutes overdue.
+-}
 overdueAmount : AnkiSettings -> Time.Posix -> Card a -> ( Float, Int )
 overdueAmount settings time card =
-    let
-        interval =
-            getCurrentIntervalInMinutes settings card
-
-        reviewed : Time.Posix
-        reviewed =
-            case card.srsData of
-                New ->
-                    Time.millisToPosix 0
-
-                Learning _ t ->
-                    t
-
-                Review _ _ t _ ->
-                    t
-
-                Lapsed _ _ _ t _ ->
-                    t
-
-        minuteDiff : Int
-        minuteDiff =
-            diff Minute Time.utc reviewed time
-
-        minutesOverdue : Int
-        minutesOverdue =
-            minuteDiff - interval
-    in
     case card.srsData of
         New ->
             ( 1.0, 0 )
 
         _ ->
+            let
+                interval : Int
+                interval =
+                    getCurrentIntervalInMinutes settings card
+
+                minutesOverdue : Int
+                minutesOverdue =
+                    diff Minute Time.utc reviewed time - interval
+
+                reviewed : Time.Posix
+                reviewed =
+                    case card.srsData of
+                        New ->
+                            Time.millisToPosix 0
+
+                        Learning { lastReviewed } ->
+                            lastReviewed
+
+                        Review { lastReviewed } ->
+                            lastReviewed
+
+                        Lapsed { lastReviewed } ->
+                            lastReviewed
+            in
             -- (Relative Amount Overdue, Absolute Minutes Overdue)
             ( toFloat minutesOverdue / toFloat interval, minutesOverdue )
-
-
-scheduleCard : AnkiSettings -> Time.Posix -> Answer -> Card a -> Card a
-scheduleCard settings time answer card =
-    let
-        newReviewInterval =
-            intervalToScale settings answer time card
-
-        boundInterval : TimeInterval Days -> TimeInterval Days
-        boundInterval i =
-            createTimeIntervalInDays
-                (min
-                    (timeIntervalToDays settings.maximumInterval)
-                    (timeIntervalToDays i)
-                )
-
-        createReview : Ease -> TimeInterval Days -> Int -> SRSData
-        createReview ease interval lapses =
-            Review
-                ease
-                (boundInterval interval)
-                time
-                (createLapses lapses)
-
-        scaleReviewInterval : Float -> Int -> TimeInterval Days
-        scaleReviewInterval f oldInterval =
-            -- Increase interval by a factor f and ensure it's at least 1 day longer
-            scaleIntervalWithMinimum (f * settings.intervalModifier) (oldInterval + 1440) oldInterval
-
-        scaleIntervalWithMinimum : Float -> Int -> Int -> TimeInterval Days
-        scaleIntervalWithMinimum f minInterval oldInterval =
-            -- This magic number is max int; truncate does not play well with larger values.
-            toFloat oldInterval
-                |> (*) f
-                |> min 2147483647
-                |> truncate
-                |> max minInterval
-                |> minutesToDayInterval
-
-        moveToReview =
-            createReview
-                (createEase settings.startingEase)
-                settings.graduatingInterval
-                0
-
-        advanceStep =
-            case card.srsData of
-                New ->
-                    if not <| List.isEmpty settings.newSteps then
-                        Learning (createStep 0) time
-
-                    else
-                        moveToReview
-
-                Learning currentStep _ ->
-                    if stepToInt currentStep + 1 >= List.length settings.newSteps then
-                        moveToReview
-
-                    else
-                        Learning (createStep (stepToInt currentStep + 1)) time
-
-                Lapsed ease currentStep oldInterval _ lapses ->
-                    if stepToInt currentStep + 1 >= List.length settings.lapseSteps then
-                        createReview
-                            ease
-                            (scaleIntervalWithMinimum
-                                settings.lapseNewInterval
-                                (timeIntervalToMinutes settings.lapseMinimumInterval)
-                                (timeIntervalToMinutes oldInterval)
-                            )
-                            (lapsesToInt lapses)
-
-                    else
-                        Lapsed ease (createStep <| stepToInt currentStep + 1) oldInterval time lapses
-
-                _ ->
-                    -- This case should never happen and will be caught by tests
-                    New
-
-        newStatus =
-            case card.srsData of
-                New ->
-                    advanceStep
-
-                Learning _ _ ->
-                    case answer of
-                        Easy ->
-                            -- Instantly graduate if answer was Easy
-                            createReview
-                                (createEase settings.startingEase)
-                                settings.easyInterval
-                                0
-
-                        Good ->
-                            advanceStep
-
-                        _ ->
-                            -- Go back to beginning of learning
-                            Learning (createStep 0) time
-
-                Lapsed ease _ oldInterval _ lapses ->
-                    if not <| List.isEmpty settings.lapseSteps then
-                        case answer of
-                            Easy ->
-                                -- Instantly graduate if answer was Easy
-                                createReview
-                                    ease
-                                    (scaleIntervalWithMinimum
-                                        settings.lapseNewInterval
-                                        (timeIntervalToMinutes settings.lapseMinimumInterval)
-                                        (timeIntervalToMinutes oldInterval)
-                                    )
-                                    (lapsesToInt lapses)
-
-                            Good ->
-                                advanceStep
-
-                            _ ->
-                                -- Go back to beginning of lapses
-                                Lapsed ease (createStep 0) oldInterval time lapses
-
-                    else
-                        -- Instantly graduate back to review if no lapse steps
-                        createReview
-                            ease
-                            (scaleIntervalWithMinimum
-                                settings.lapseNewInterval
-                                (timeIntervalToMinutes settings.lapseMinimumInterval)
-                                (timeIntervalToMinutes oldInterval)
-                            )
-                            (lapsesToInt lapses)
-
-                Review ease lastInterval _ lapses ->
-                    case answer of
-                        -- Force next interval to be at least 1 day longer except for lapse
-                        Easy ->
-                            createReview
-                                ease
-                                (fuzzInterval time
-                                    << scaleReviewInterval (easeToFloat ease * max 1 settings.easyBonus)
-                                 <|
-                                    newReviewInterval
-                                )
-                                (lapsesToInt lapses)
-
-                        Good ->
-                            createReview
-                                ease
-                                (fuzzInterval time
-                                    << scaleReviewInterval (easeToFloat ease)
-                                 <|
-                                    newReviewInterval
-                                )
-                                (lapsesToInt lapses)
-
-                        Hard ->
-                            createReview
-                                ease
-                                (fuzzInterval time
-                                    << scaleReviewInterval (min (easeToFloat ease) settings.hardInterval)
-                                 <|
-                                    newReviewInterval
-                                )
-                                (lapsesToInt lapses)
-
-                        Again ->
-                            Lapsed ease (createStep 0) lastInterval time (createLapses <| lapsesToInt lapses + 1)
-    in
-    { card | srsData = newStatus }
-
-
-easeEncoder : Ease -> Encode.Value
-easeEncoder ease =
-    Encode.float <| easeToFloat ease
-
-
-stepEncoder : Step -> Encode.Value
-stepEncoder step =
-    Encode.int <| stepToInt step
-
-
-lapsesEncoder : Lapses -> Encode.Value
-lapsesEncoder lapses =
-    Encode.int <| lapsesToInt lapses
-
-
-intervalEncoder : TimeInterval Days -> Encode.Value
-intervalEncoder interval =
-    case interval of
-        TimeInterval i ->
-            Encode.int i
-
-
-updateEase : Answer -> Card a -> Card a
-updateEase answer card =
-    case card.srsData of
-        Review oldEase interval reviewed lapses ->
-            let
-                newEase =
-                    case answer of
-                        Again ->
-                            createEase <| easeToFloat oldEase - 0.2
-
-                        Hard ->
-                            createEase <| easeToFloat oldEase - 0.15
-
-                        Good ->
-                            oldEase
-
-                        Easy ->
-                            createEase <| easeToFloat oldEase + 0.15
-            in
-            { card | srsData = Review newEase interval reviewed lapses }
-
-        _ ->
-            -- Ease ONLY gets updated when in Review phase
-            card
-
-
-getCurrentIntervalInMinutes : AnkiSettings -> Card a -> Int
-getCurrentIntervalInMinutes settings { srsData } =
-    case srsData of
-        New ->
-            0
-
-        Learning step _ ->
-            List.Extra.getAt (stepToInt step) settings.newSteps
-                |> Maybe.map timeIntervalToMinutes
-                |> Maybe.withDefault 1
-
-        Lapsed _ step _ _ _ ->
-            List.Extra.getAt (stepToInt step) settings.lapseSteps
-                |> Maybe.map timeIntervalToMinutes
-                |> Maybe.withDefault 1
-
-        Review _ interval _ _ ->
-            timeIntervalToMinutes interval
-
-
-fuzzInterval : Time.Posix -> TimeInterval Days -> TimeInterval Days
-fuzzInterval time interval =
-    Random.step (fuzzedIntervalGenerator interval) (Random.initialSeed <| Time.posixToMillis time)
-        |> Tuple.first
-
-
-fuzzedIntervalGenerator : TimeInterval Days -> Random.Generator (TimeInterval Days)
-fuzzedIntervalGenerator timeInterval =
-    -- These are the fuzz amounts per Anki's source
-    let
-        interval =
-            timeIntervalToDays timeInterval
-
-        fuzz : Int
-        fuzz =
-            if interval < 7 then
-                round << max 1 <| toFloat interval * 0.25
-
-            else if interval < 30 then
-                round << max 2 <| toFloat interval * 0.15
-
-            else
-                round << max 4 <| toFloat interval * 0.05
-
-        ( minInterval, maxInterval ) =
-            if interval < 2 then
-                ( 1, 1 )
-
-            else if interval == 2 then
-                ( 2, 3 )
-
-            else
-                ( interval - fuzz, interval + fuzz )
-    in
-    Random.map createTimeIntervalInDays <| Random.int minInterval maxInterval

@@ -1,0 +1,3 @@
+[submodule "review"]
+	path = review
+	url = https://github.com/SiriusStarr/elm-review-rules.git

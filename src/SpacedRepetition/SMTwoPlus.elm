@@ -108,11 +108,27 @@ If you require specific details for a single card, you may use the provided func
 -}
 
 import Array exposing (Array)
-import Array.Extra
+import Array.Extra as ArrayX
 import Json.Decode as Decode
 import Json.Encode as Encode
-import List.Extra
-import SpacedRepetition.Internal.SMTwoPlus exposing (Interval, PerformanceRating(..), ReviewHistory(..), createDifficulty, createInterval, difficultyToFloat, intervalToFloat, performanceRatingToFloat)
+import List.Extra as ListX
+import SpacedRepetition.Internal.SMTwoPlus
+    exposing
+        ( Difficulty
+        , Interval
+        , ReviewHistory(..)
+        , createDifficulty
+        , createInterval
+        , decodeDifficulty
+        , decodeInterval
+        , defaultDifficulty
+        , difficultyToFloat
+        , encodeDifficulty
+        , encodeInterval
+        , intervalToFloat
+        , performanceRatingToFloat
+        )
+import SpacedRepetition.Internal.Time as Time
 import Time
 import Time.Extra as TimeExtra
 
@@ -126,9 +142,7 @@ A `Card` contains only the information necessary for scheduling and nothing else
 
 -}
 type alias Card a =
-    { a
-        | srsData : SRSData
-    }
+    { a | srsData : SRSData }
 
 
 {-| A `Deck` represents a list of cards to be studied (this might be called a "collection" in other software). It is simply an `Array` of `Card` and requires no special creation or manipulation. Maintaining the state of a `Deck` may be handled by the user of the module or by this module itself. In general, it is probably best not to add a massive quantity of new (unstudied) cards to a deck at once.
@@ -158,11 +172,11 @@ encoderSRSData data =
         New ->
             Encode.null
 
-        Reviewed diff reviewed interval ->
+        Reviewed { difficulty, interval, lastReviewed } ->
             Encode.object
-                [ ( "difficulty", Encode.float <| difficultyToFloat diff )
-                , ( "dateLastReviewed", Encode.int <| Time.posixToMillis reviewed // 1000 ) -- Encode time in seconds; loss of precision is acceptable
-                , ( "daysBetweenReviews", Encode.float <| intervalToFloat interval )
+                [ ( "dateLastReviewed", Time.encode lastReviewed )
+                , ( "difficulty", encodeDifficulty difficulty )
+                , ( "daysBetweenReviews", encodeInterval interval )
                 ]
 
 
@@ -172,10 +186,17 @@ decoderSRSData : Decode.Decoder SRSData
 decoderSRSData =
     Decode.oneOf
         [ Decode.null New
-        , Decode.map3 Reviewed
-            (Decode.map createDifficulty <| Decode.field "difficulty" Decode.float)
-            (Decode.map (\t -> Time.millisToPosix <| t * 1000) <| Decode.field "dateLastReviewed" Decode.int)
-            (Decode.map createInterval <| Decode.field "daysBetweenReviews" Decode.float)
+        , Decode.map3
+            (\difficulty interval lastReviewed ->
+                Reviewed
+                    { difficulty = difficulty
+                    , interval = interval
+                    , lastReviewed = lastReviewed
+                    }
+            )
+            (Decode.field "difficulty" decodeDifficulty)
+            (Decode.field "daysBetweenReviews" decodeInterval)
+            (Decode.field "dateLastReviewed" Time.decode)
         ]
 
 
@@ -188,15 +209,15 @@ type alias PerformanceRating =
 {-| The `performanceRating` function creates a `PerformanceRating`. `PerformanceRating` is quantitative and must be between 0.0 and 1.0, with values of 0.6 and greater representing a "correct" answer.
 -}
 performanceRating : Float -> PerformanceRating
-performanceRating f =
-    PerformanceRating <| clamp 0.0 1.0 f
+performanceRating =
+    SpacedRepetition.Internal.SMTwoPlus.performanceRating
 
 
 {-| `answerCardInDeck` functions analogously to `answerCard` but handles maintenance of the `Deck`, which is typically what one would desire. When a card is presented to the user and answered, `answerCardInDeck` should be called with a `Maybe IncorrectSchedulingFunction`, the current time (in the `Time.Posix` format returned by the `now` task of the core `Time` module), a `PerformanceRating`, the index of the card in the `Deck`, and the `Deck` itself. It returns the updated `Deck`. Use this function if you simply want to store a `Deck` and not worry about updating it manually (which is most likely what you want). Otherwise, use `answerCard` to handle updating the `Deck` manually. Handling the presentation of a card is the responsibility of the implementing program, as various behaviors might be desirable in different cases. Note that if an invalid (out of bounds) index is passed, the `Deck` is returned unaltered. `IncorrectSchedulingFunction` may be provided to fix the issue with scheduling incorrect cards inherent in the algorithm. If `Nothing` is provided, the algorithm-specified `1 / diffWeight ^ 2` scaling is used that results in questionable behavior.
 -}
 answerCardInDeck : Maybe IncorrectSchedulingFunction -> Time.Posix -> PerformanceRating -> Int -> Deck a -> Deck a
 answerCardInDeck scheduleFunc time perf i deck =
-    Array.Extra.update i (answerCard scheduleFunc time perf) deck
+    ArrayX.update i (answerCard scheduleFunc time perf) deck
 
 
 {-| When a card is presented to the user and answered, `answerCard` should be called with a `Maybe IncorrectSchedulingFunction`, the current time (in the `Time.Posix` format returned by the `now` task of the core `Time` module) and an `PerformanceRating`. It returns the updated card, which should replace the card in the `Deck`. Use this function if you want to handle updating the `Deck` manually; otherwise, use `answerCardInDeck`. Handling the presentation of a card is the responsibility of the implementing program, as various behaviors might be desirable in different cases. `IncorrectSchedulingFunction` may be provided to fix the issue with scheduling incorrect cards inherent in the algorithm. If `Nothing` is provided, the algorithm-specified `1 / diffWeight ^ 2` scaling is used that results in questionable behavior.
@@ -204,22 +225,86 @@ answerCardInDeck scheduleFunc time perf i deck =
 answerCard : Maybe IncorrectSchedulingFunction -> Time.Posix -> PerformanceRating -> Card a -> Card a
 answerCard scheduleFunc time perf card =
     let
-        performanceFloat =
-            performanceRatingToFloat perf
-
+        percentDue : Float
         percentDue =
-            if isCorrect performanceFloat then
+            if isCorrect perf then
                 case percentOverdue time card of
-                    Nothing ->
-                        1
-
                     Just f ->
                         min 2 f
+
+                    Nothing ->
+                        1
 
             else
                 1
     in
-    scheduleCard scheduleFunc time percentDue performanceFloat card
+    scheduleCard scheduleFunc time percentDue perf card
+
+
+{-| Given possibly a corrected function for scheduling incorrect answers, the
+current time, the percent overdue, and the answer quality, schedule a card for
+future review, updating its queue status.
+-}
+scheduleCard : Maybe IncorrectSchedulingFunction -> Time.Posix -> Float -> PerformanceRating -> Card a -> Card a
+scheduleCard scheduleFunc time percentDue perf card =
+    let
+        useFunc : IncorrectSchedulingFunction
+        useFunc =
+            case scheduleFunc of
+                Just func ->
+                    func
+
+                Nothing ->
+                    \dW -> 1 / (dW ^ 2)
+    in
+    { card
+        | srsData =
+            Reviewed
+                { difficulty = newDifficulty percentDue perf card
+                , interval = nextInterval useFunc percentDue perf card
+                , lastReviewed = time
+                }
+    }
+
+
+{-| Given the percent overdue a card is and an answer quality, determine the new
+difficulty of the card.
+-}
+newDifficulty : Float -> PerformanceRating -> Card a -> Difficulty
+newDifficulty percentDue perf card =
+    case card.srsData of
+        New ->
+            defaultDifficulty
+
+        Reviewed { difficulty } ->
+            (difficultyToFloat difficulty + percentDue * (8 - 9 * performanceRatingToFloat perf) / 17)
+                |> createDifficulty
+
+
+{-| Given a way to schedule incorrect cards, a percent overdue, and an answer
+quality, determine the next interval for a card.
+-}
+nextInterval : IncorrectSchedulingFunction -> Float -> PerformanceRating -> Card a -> Interval
+nextInterval scheduleFunc percentDue perf card =
+    case card.srsData of
+        New ->
+            createInterval 1
+
+        Reviewed { difficulty, interval } ->
+            let
+                multiplier : Float
+                multiplier =
+                    if isCorrect perf then
+                        1 + (difficultyWeight - 1) * percentDue
+
+                    else
+                        scheduleFunc difficultyWeight
+
+                difficultyWeight : Float
+                difficultyWeight =
+                    3 - 1.7 * difficultyToFloat difficulty
+            in
+            createInterval <| intervalToFloat interval * multiplier
 
 
 {-| `IncorrectSchedulingFunction` must take a float as an argument, representing "difficultyWeight" (which is in the interval [1.3, 3.0]), and return a float representing the factor by which the interval should be scaled (which should probably be in the interval [0.0, 1.0]). This function will only be called with incorrect answers, not correct ones. Note that an incorrect interval cannot be less than 1 day, so any factor resulting in a shorter interval will simply result in an interval of 1 day. A custom function may be provided, or the pre-made function `oneMinusReciprocalDiffWeightSquared` may be used, which seems a likely correction.
@@ -251,8 +336,12 @@ getDueCardIndices time deck =
         |> List.filter
             (isDue time << Tuple.second)
         |> List.sortWith
-            (\c1 c2 -> sortDue time (Tuple.second c1) (Tuple.second c2))
-        |> List.Extra.reverseMap Tuple.first
+            (\( _, c1 ) ( _, c2 ) -> compareDue time c1 c2)
+        |> ListX.reverseMap Tuple.first
+
+
+
+-- Non-exposed functions below
 
 
 {-| `getDueCardIndicesWithDetails` takes the current time (in the `Time.Posix` format returned by the `now` task of the core `Time` module) and a `Deck` and returns the the subset of the `Deck` that is due for review (as a list of records), providing their index and which queue they are currently in, with any relevant queue details. The returned indices will be sorted in the following order:
@@ -274,8 +363,8 @@ getDueCardIndicesWithDetails time deck =
         |> List.filter
             (isDue time << Tuple.second)
         |> List.sortWith
-            (\c1 c2 -> sortDue time (Tuple.second c1) (Tuple.second c2))
-        |> List.Extra.reverseMap
+            (\( _, c1 ) ( _, c2 ) -> compareDue time c1 c2)
+        |> ListX.reverseMap
             (\( index, card ) ->
                 { index = index, queueDetails = getQueueDetails card }
             )
@@ -285,13 +374,13 @@ getDueCardIndicesWithDetails time deck =
 
   - `NewCard` -- A card that has never before been studied (encountered) by the user.
   - `ReviewQueue {...}` -- A card that is being reviewed for retention.
-      - `lastSeen : Time.Posix` -- The date and time the card was last reviewed.
-      - `intervalInDays : Float` -- The interval, in days from the date last seen, that the card was slated for review in.
+      - `intervalInDays : Float` -- The interval, in days from the date last seen, that the card is slated for review in.
+      - `lastReviewed : Time.Posix` -- The date and time the card was last reviewed.
 
 -}
 type QueueDetails
     = NewCard
-    | ReviewQueue { lastSeen : Time.Posix, intervalInDays : Float }
+    | ReviewQueue { intervalInDays : Float, lastReviewed : Time.Posix }
 
 
 {-| `getCardDetails` returns the current queue status for a given card. If you require this for every due card, simply use `getDueCardIndicesWithDetails`.
@@ -301,37 +390,12 @@ getCardDetails c =
     { queueDetails = getQueueDetails c }
 
 
-
--- Non-exposed functions below
-
-
-getQueueDetails : Card a -> QueueDetails
-getQueueDetails c =
-    case c.srsData of
-        New ->
-            NewCard
-
-        Reviewed _ lastReviewed interval ->
-            ReviewQueue
-                { lastSeen = lastReviewed
-                , intervalInDays = intervalToFloat interval
-                }
-
-
-sortDue : Time.Posix -> Card a -> Card a -> Order
-sortDue time c1 c2 =
+{-| Compare the "due"-ness of two cards at a given time.
+-}
+compareDue : Time.Posix -> Card a -> Card a -> Order
+compareDue time c1 c2 =
     case ( percentOverdue time c1, percentOverdue time c2 ) of
         -- New cards go last
-        ( Nothing, Nothing ) ->
-            EQ
-
-        ( Nothing, _ ) ->
-            LT
-
-        ( _, Nothing ) ->
-            GT
-
-        -- If neither is new, then rank "more due" cards first (by percent due).  EQ case doesn't matter, since order becomes irrelevant then.
         ( Just percent1, Just percent2 ) ->
             if percent1 >= percent2 then
                 GT
@@ -339,48 +403,66 @@ sortDue time c1 c2 =
             else
                 LT
 
+        ( Nothing, Nothing ) ->
+            EQ
 
+        ( Nothing, _ ) ->
+            LT
+
+        -- If neither is new, then rank "more due" cards first (by percent due).  EQ case doesn't matter, since order becomes irrelevant then.
+        ( _, Nothing ) ->
+            GT
+
+
+{-| Given a card, return its review status.
+-}
+getQueueDetails : Card a -> QueueDetails
+getQueueDetails c =
+    case c.srsData of
+        New ->
+            NewCard
+
+        Reviewed { interval, lastReviewed } ->
+            ReviewQueue
+                { intervalInDays = intervalToFloat interval
+                , lastReviewed = lastReviewed
+                }
+
+
+{-| Determine if an answer was correct or not.
+-}
+isCorrect : PerformanceRating -> Bool
+isCorrect p =
+    0.6 <= performanceRatingToFloat p
+
+
+{-| Check if a card is currently due to be studied.
+-}
 isDue : Time.Posix -> Card a -> Bool
 isDue time card =
     case percentOverdue time card of
-        Nothing ->
-            True
-
         Just f ->
             f >= 1
 
-
-scheduleCard : Maybe IncorrectSchedulingFunction -> Time.Posix -> Float -> Float -> Card a -> Card a
-scheduleCard scheduleFunc time percentDue perf card =
-    let
-        useFunc =
-            case scheduleFunc of
-                Nothing ->
-                    \dW -> 1 / (dW ^ 2)
-
-                Just func ->
-                    func
-
-        newDiff =
-            newDifficulty percentDue perf card
-
-        newHistory =
-            Reviewed (createDifficulty newDiff) time <| nextInterval useFunc percentDue perf card
-    in
-    { card | srsData = newHistory }
+        Nothing ->
+            True
 
 
+{-| Given the current time, determine what proportion overdue the card is, i.e.
+`0.9` is 90% of the way to being overdue and `2` is the interval again overdue,
+if possible.
+-}
 percentOverdue : Time.Posix -> Card a -> Maybe Float
 percentOverdue time card =
     case card.srsData of
         New ->
             Nothing
 
-        Reviewed _ reviewed interval ->
+        Reviewed { interval, lastReviewed } ->
             let
                 hourDiff : Float
                 hourDiff =
-                    TimeExtra.diff TimeExtra.Hour Time.utc reviewed time
+                    TimeExtra.diff TimeExtra.Hour Time.utc lastReviewed time
                         -- Ensure that weird edge cases don't happen reviewing before the card was last reviewed
                         |> max 0
                         |> toFloat
@@ -391,39 +473,3 @@ percentOverdue time card =
 
             else
                 Just <| ((hourDiff + 16) / 24) / intervalToFloat interval
-
-
-newDifficulty : Float -> Float -> Card a -> Float
-newDifficulty percentDue perf card =
-    case card.srsData of
-        New ->
-            0.3
-
-        Reviewed diff _ _ ->
-            clamp 0 1 <| difficultyToFloat diff + percentDue * (8 - 9 * perf) / 17
-
-
-nextInterval : IncorrectSchedulingFunction -> Float -> Float -> Card a -> Interval
-nextInterval scheduleFunc percentDue perf card =
-    case card.srsData of
-        New ->
-            createInterval 1
-
-        Reviewed diff _ daysBetweenReviews ->
-            let
-                difficultyWeight =
-                    3 - 1.7 * difficultyToFloat diff
-
-                multiplier =
-                    if isCorrect perf then
-                        1 + (difficultyWeight - 1) * percentDue
-
-                    else
-                        scheduleFunc difficultyWeight
-            in
-            createInterval <| intervalToFloat daysBetweenReviews * multiplier
-
-
-isCorrect : Float -> Bool
-isCorrect =
-    (<=) 0.6

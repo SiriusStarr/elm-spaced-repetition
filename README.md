@@ -15,7 +15,7 @@ SM-2 scheduling algorithm.  If you're **not sure which to use**, the algorithm
 provided by **`SMTwoAnki`** (which reproduces the scheduling behavior of the popular
 F/OSS flashcard software Anki) is **most likely the "best" option.**
 
-### Leitner (`SpacedRepetition.Leitner`)
+### Leitner ([`SpacedRepetition.Leitner`](https://package.elm-lang.org/packages/SiriusStarr/elm-spaced-repetition/2.0.1/SpacedRepetition-Leitner))
 
 The Leitner system was proposed by Sebastian Leitner in the early 1970s and was
 originally intended for use with physical (paper) flashcards.  For the basics
@@ -26,7 +26,7 @@ In general, the Leitner system is much more simple than the other options
 provided (given that it was meant to be workable by hand) and should generally
 be considered deprecated in favor of the more advanced SM-2 based algorithms.
 
-### SM-2 (`SpacedRepetition.SMTwo`)
+### SM-2 ([`SpacedRepetition.SMTwo`](https://package.elm-lang.org/packages/SiriusStarr/elm-spaced-repetition/2.0.1/SpacedRepetition-SMTwo))
 
 The SM-2 algorithm was one of the earliest computerized implementations of a
 spaced repetition algorithm (created in 1988 by Piotr Wozniak) and has been
@@ -44,7 +44,7 @@ The SM-2 algorithm is robust, if more rudimentary than Anki's variant.  Still,
 it may be useful for those desiring a simple system without settings that can
 still adapt to individual card difficulties (unlike the Leitner system).
 
-### SM2+ (`SpaceRepetition.SMTwoPlus`)
+### SM2+ ([`SpaceRepetition.SMTwoPlus`](https://package.elm-lang.org/packages/SiriusStarr/elm-spaced-repetition/2.0.1/SpacedRepetition-SMTwoPlus))
 
 The SM2+ algorithm was proposed by "BlueRaja" as an improvement of the SM-2
 algorithm.  For details about the SM2+ algorithm and its purported advantages
@@ -57,7 +57,7 @@ presented in its reference implementation and its superiority to the SM-2
 algorithm is dubious at best.  Nevertheless, it is implemented here as it is
 popular and often-cited online.
 
-### Anki (`SpaceRepetition.SMTwoAnki`)
+### Anki ([`SpaceRepetition.SMTwoAnki`](https://package.elm-lang.org/packages/SiriusStarr/elm-spaced-repetition/2.0.1/SpacedRepetition-SMTwoAnki))
 
 The algorithm used by the popular F/OSS program Anki, this algorithm is a
 heavily-modified version of the SM-2 algorithm.  For details about Anki's

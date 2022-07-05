@@ -2,7 +2,7 @@ module TestSMTwoAnki exposing (suite)
 
 import Array exposing (Array)
 import Array.Extra as ArrayX
-import Basics.Extra exposing (flip)
+import Basics.Extra exposing (flip, safeDivide)
 import Expect exposing (Expectation, FloatingPointTolerance(..))
 import Fuzz
     exposing
@@ -487,11 +487,11 @@ suiteAnswerCard =
 
                     overdueAmt1 : Int
                     overdueAmt1 =
-                        overdueAmount settings time (Review review1)
+                        minutesOverdue settings time (Review review1)
 
                     overdueAmt2 : Int
                     overdueAmt2 =
-                        overdueAmount settings time (Review review2)
+                        minutesOverdue settings time (Review review2)
                 in
                 case ( answer, compare overdueAmt1 overdueAmt2 ) of
                     ( Again, _ ) ->
@@ -675,7 +675,7 @@ suiteGetDue =
 
                     isDue : { srsData : SRSData } -> Bool
                     isDue c =
-                        overdueAmount deck.settings time c.srsData >= 0
+                        minutesOverdue deck.settings time c.srsData >= 0
                 in
                 Array.toIndexedList deck.cards
                     |> List.filter (not << flip List.member due << Tuple.first)
@@ -686,7 +686,7 @@ suiteGetDue =
                 let
                     isNotDue : { srsData : SRSData } -> Bool
                     isNotDue c =
-                        overdueAmount deck.settings time c.srsData < -20
+                        minutesOverdue deck.settings time c.srsData < -20
                 in
                 getDueCardIndices time deck
                     |> List.filterMap (\i -> Array.get i deck.cards)
@@ -726,7 +726,9 @@ suiteGetDue =
 
                             proportionOverdue : { srsData : SRSData } -> Float
                             proportionOverdue c =
-                                toFloat (overdueAmount deck.settings time c.srsData) / toFloat (getInterval deck.settings c.srsData)
+                                safeDivide (toFloat (minutesOverdue deck.settings time c.srsData))
+                                    (toFloat (getInterval deck.settings c.srsData))
+                                    |> Maybe.withDefault 0
                         in
                         case ( lastCard.srsData, nextCard.srsData ) of
                             ( New, New ) ->
@@ -1173,6 +1175,24 @@ lastReviewedFromCard c =
             Just lastReviewed
 
 
+{-| Determine how many minutes overdue a card is.
+-}
+minutesOverdue : AnkiSettings -> Time.Posix -> SRSData -> Int
+minutesOverdue settings time srsData =
+    case srsData of
+        New ->
+            0
+
+        _ ->
+            let
+                reviewed : Time.Posix
+                reviewed =
+                    lastReviewedFromCard { srsData = srsData }
+                        |> Maybe.withDefault (Time.millisToPosix 0)
+            in
+            diff Minute Time.utc reviewed time - getInterval settings srsData
+
+
 {-| Given an answer quality, determine what the next interval for a card should
 be, in minutes.
 -}
@@ -1223,13 +1243,13 @@ nextInterval settings answer time old =
                     oldIntervalInMinutes
 
                 Good ->
-                    overdueAmount settings time (Review old)
-                        |> (\minutesOverdue -> minutesOverdue // 2)
+                    minutesOverdue settings time (Review old)
+                        |> (\minutes -> minutes // 2)
                         |> (+) oldIntervalInMinutes
                         |> max oldIntervalInMinutes
 
                 Easy ->
-                    overdueAmount settings time (Review old)
+                    minutesOverdue settings time (Review old)
                         |> (+) oldIntervalInMinutes
                         |> max oldIntervalInMinutes
 
@@ -1244,21 +1264,3 @@ nextInterval settings answer time old =
         |> min 2147483647
         |> truncate
         |> max (scaleInterval + 1440)
-
-
-{-| Determine how many minutes overdue a card is.
--}
-overdueAmount : AnkiSettings -> Time.Posix -> SRSData -> Int
-overdueAmount settings time srsData =
-    case srsData of
-        New ->
-            0
-
-        _ ->
-            let
-                reviewed : Time.Posix
-                reviewed =
-                    lastReviewedFromCard { srsData = srsData }
-                        |> Maybe.withDefault (Time.millisToPosix 0)
-            in
-            diff Minute Time.utc reviewed time - getInterval settings srsData

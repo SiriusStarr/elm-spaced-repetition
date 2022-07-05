@@ -2,7 +2,7 @@ module TestLeitner exposing (suite)
 
 import Array exposing (Array)
 import Array.Extra as ArrayX
-import Basics.Extra exposing (flip)
+import Basics.Extra exposing (flip, safeDivide)
 import Expect exposing (Expectation)
 import Fuzz
     exposing
@@ -268,8 +268,9 @@ suiteGetDueCardIndices =
 
                     overdueAmount : Natural -> Time.Posix -> Float
                     overdueAmount box reviewed =
-                        (toFloat (diff Hour Time.utc reviewed time) / 24 + 0.5)
-                            / toFloat (deck.settings.boxSpacing <| Natural.toInt box)
+                        safeDivide (toFloat (diff Hour Time.utc reviewed time) / 24 + 0.5)
+                            (toFloat (deck.settings.boxSpacing <| Natural.toInt box))
+                            |> Maybe.withDefault 1
                 in
                 Array.toIndexedList deck.cards
                     |> List.filter (not << flip List.member due << Tuple.first)
@@ -292,8 +293,9 @@ suiteGetDueCardIndices =
 
                     overdueAmount : Natural -> Time.Posix -> Float
                     overdueAmount box reviewed =
-                        (toFloat (diff Hour Time.utc reviewed time) / 24 + 0.5)
-                            / toFloat (deck.settings.boxSpacing <| Natural.toInt box)
+                        safeDivide (toFloat (diff Hour Time.utc reviewed time) / 24 + 0.5)
+                            (toFloat (deck.settings.boxSpacing <| Natural.toInt box))
+                            |> Maybe.withDefault 1
                 in
                 List.filterMap (\i -> Array.get i deck.cards) (getDueCardIndices time deck)
                     |> ListX.count (not << isDue)
@@ -347,8 +349,9 @@ suiteGetDueCardIndices =
 
                     overdueAmount : { box : Natural, lastReviewed : Time.Posix } -> Float
                     overdueAmount { box, lastReviewed } =
-                        (toFloat (diff Hour Time.utc lastReviewed time) / 24 + 0.5)
-                            / toFloat (deck.settings.boxSpacing <| Natural.toInt box)
+                        safeDivide (toFloat (diff Hour Time.utc lastReviewed time) / 24 + 0.5)
+                            (toFloat (deck.settings.boxSpacing <| Natural.toInt box))
+                            |> Maybe.withDefault 1
                 in
                 List.foldl step ( firstCard, True ) dueDeck
                     |> Tuple.second

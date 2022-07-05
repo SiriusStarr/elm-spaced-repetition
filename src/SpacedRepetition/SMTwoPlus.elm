@@ -109,6 +109,7 @@ If you require specific details for a single card, you may use the provided func
 
 import Array exposing (Array)
 import Array.Extra as ArrayX
+import Basics.Extra exposing (safeDivide)
 import Json.Decode as Decode
 import Json.Encode as Encode
 import List.Extra as ListX
@@ -255,7 +256,7 @@ scheduleCard scheduleFunc time percentDue perf card =
                     func
 
                 Nothing ->
-                    \dW -> 1 / (dW ^ 2)
+                    \dW -> Maybe.withDefault 1 <| safeDivide 1 (dW ^ 2)
     in
     { card
         | srsData =
@@ -317,7 +318,7 @@ type alias IncorrectSchedulingFunction =
 -}
 oneMinusReciprocalDiffWeightSquared : Float -> Float
 oneMinusReciprocalDiffWeightSquared diffWeight =
-    1 - 1 / diffWeight ^ 2
+    1 - (Maybe.withDefault 1 <| safeDivide 1 (diffWeight ^ 2))
 
 
 {-| `getDueCardIndices` takes the current time (in the `Time.Posix` format returned by the `now` task of the core `Time` module) and a `Deck` and returns the indices of the subset of the `Deck` that is due for review (as `List Int`). The returned indices will be sorted in the following order:
@@ -469,7 +470,7 @@ percentOverdue time card =
             in
             if hourDiff <= 8 then
                 -- Per algorithm, ignore cards if it's been less than ~8 hours.
-                Just <| min 0.99 <| (hourDiff / 24) / intervalToFloat interval
+                Maybe.map (min 0.99) <| safeDivide (hourDiff / 24) <| intervalToFloat interval
 
             else
-                Just <| ((hourDiff + 16) / 24) / intervalToFloat interval
+                safeDivide ((hourDiff + 16) / 24) <| intervalToFloat interval

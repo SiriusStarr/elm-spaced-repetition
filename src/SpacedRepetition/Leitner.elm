@@ -108,6 +108,7 @@ If you require specific details for a single card, you may use the provided func
 
 import Array exposing (Array)
 import Array.Extra as ArrayX
+import Basics.Extra exposing (safeDivide)
 import Json.Decode as Decode
 import Json.Encode as Encode
 import List.Extra as ListX
@@ -505,4 +506,5 @@ overdueAmount { boxSpacing } time lastReviewed box =
             toFloat (diff Hour Time.utc lastReviewed time) / 24
     in
     -- The "next day" starts after 12 hours; this is ultimately a hack to prevent the user of the module from having to determine when the day rolls over.
-    (dayDiff + 0.5) / toFloat boxInterval
+    safeDivide (dayDiff + 0.5) (toFloat boxInterval)
+        |> Maybe.withDefault 1

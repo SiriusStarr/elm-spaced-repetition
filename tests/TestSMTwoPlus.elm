@@ -2,7 +2,7 @@ module TestSMTwoPlus exposing (suite)
 
 import Array exposing (Array)
 import Array.Extra as ArrayX
-import Basics.Extra exposing (flip)
+import Basics.Extra exposing (flip, safeDivide)
 import Expect exposing (Expectation, FloatingPointTolerance(..))
 import Fuzz
     exposing
@@ -618,7 +618,8 @@ overdueAmount time interval reviewed =
     let
         overdue : Float
         overdue =
-            toFloat (16 + diff Hour Time.utc reviewed time) / 24 / interval
+            safeDivide (toFloat (16 + diff Hour Time.utc reviewed time) / 24) interval
+                |> Maybe.withDefault 1
     in
     if diff Hour Time.utc reviewed time <= 8 then
         min 0.99 overdue

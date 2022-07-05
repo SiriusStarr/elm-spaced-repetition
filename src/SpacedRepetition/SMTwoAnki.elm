@@ -16,7 +16,7 @@ module SpacedRepetition.SMTwoAnki exposing
   - <http://www.supermemo.com>
   - <http://www.supermemo.eu>
 
-For details about Anki's algorithm, please refer to [the following section of its manual](https://apps.ankiweb.net/docs/manual.html#what-spaced-repetition-algorithm-does-anki-use).
+For details about Anki's algorithm, please refer to [the following section of its manual](https://faqs.ankiweb.net/what-spaced-repetition-algorithm.html).
 
 The above description details how Anki's algorithm differs from the SM-2 algorithm, but briefly, the following differences may be noted:
 
@@ -167,7 +167,7 @@ import Time
 import Time.Extra exposing (Interval(..), diff)
 
 
-{-| `AnkiSettings` customizes the behavior of this algorithm. Refer to [this section of the Anki manual](https://apps.ankiweb.net/docs/manual.html#deck-options) for more details. It may be created with the `createSettings` function and its values may be changed form default by piping to the following functions:
+{-| `AnkiSettings` customizes the behavior of this algorithm. Refer to [this section of the Anki manual](https://docs.ankiweb.net/deck-options.html) for more details. It may be created with the `createSettings` function and its values may be changed form default by piping to the following functions:
 
 
 ## New Cards

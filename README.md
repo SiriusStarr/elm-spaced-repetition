@@ -61,7 +61,7 @@ popular and often-cited online.
 
 The algorithm used by the popular F/OSS program Anki, this algorithm is a
 heavily-modified version of the SM-2 algorithm.  For details about Anki's
-algorithm, please refer to [the following section of its manual](https://apps.ankiweb.net/docs/manual.html#what-spaced-repetition-algorithm-does-anki-use).
+algorithm, please refer to [the following section of its manual](https://faqs.ankiweb.net/what-spaced-repetition-algorithm.html).
 
 This is by far the most powerful and flexible algorithm provided in this package
 and should be considered the "default" for most users.
@@ -224,6 +224,7 @@ individual implementations.  Refer to their documentation for specifics.
       already been partially studied to remove previously-extant `newSteps`.
     * 🏷️ `Ease`, `TimeInterval`, `Days`, `Minutes`, and `Natural` are now exposed
       (but still opaque), so you may write type signatures with them.
+    * 📝 Fix broken links to Anki documentation, since the URLs moved.
   * `SpacedRepetition.SMTwoPlus`
     * 💥 **Breaking:** `lastSeen` is now `lastReviewed` in `QueueDetails`, to be
       more explicit/consistent with naming.

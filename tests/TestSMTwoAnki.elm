@@ -1,12 +1,4 @@
-module TestSMTwoAnki exposing
-    ( cardSchedulingTests
-    , suiteAnswerCard
-    , suiteAnswerCardInDeck
-    , suiteGetDue
-    , suiteGetDueWithDetails
-    , suiteGetLeeches
-    , suiteJson
-    )
+module TestSMTwoAnki exposing (suite)
 
 import Array exposing (Array)
 import Array.Extra as ArrayX
@@ -59,6 +51,21 @@ import Test exposing (Test, describe, fuzz, fuzz2, fuzz3)
 import Time
 import Time.Extra exposing (Interval(..), diff)
 import Util exposing (boundedLessThan, fuzzNatural, fuzzTime)
+
+
+{-| Tests for SM-2 Anki algorithm.
+-}
+suite : Test
+suite =
+    describe "SM-2 Anki"
+        [ cardSchedulingTests
+        , suiteAnswerCard
+        , suiteAnswerCardInDeck
+        , suiteGetDue
+        , suiteGetDueWithDetails
+        , suiteGetLeeches
+        , suiteJson
+        ]
 
 
 {-| Tests for updating cards in certain queues to the next.

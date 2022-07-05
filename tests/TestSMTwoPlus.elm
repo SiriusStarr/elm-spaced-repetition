@@ -1,10 +1,4 @@
-module TestSMTwoPlus exposing
-    ( suiteAnswerCard
-    , suiteAnswerCardInDeck
-    , suiteGetDueCardIndices
-    , suiteGetDueCardIndicesWithDetails
-    , suiteJson
-    )
+module TestSMTwoPlus exposing (suite)
 
 import Array exposing (Array)
 import Array.Extra as ArrayX
@@ -48,6 +42,19 @@ import Test exposing (Test, describe, fuzz, fuzz2, fuzz3)
 import Time
 import Time.Extra exposing (Interval(..), diff)
 import Util exposing (boundedGreaterThan, boundedLessThan, fuzzTime)
+
+
+{-| Tests for SM-2 Plus algorithm.
+-}
+suite : Test
+suite =
+    describe "SM-2 Plus"
+        [ suiteAnswerCard
+        , suiteAnswerCardInDeck
+        , suiteGetDueCardIndices
+        , suiteGetDueCardIndicesWithDetails
+        , suiteJson
+        ]
 
 
 {-| Test `answerCard`.

@@ -1,10 +1,4 @@
-module TestLeitner exposing
-    ( suiteAnswerCard
-    , suiteAnswerCardInDeck
-    , suiteGetDueCardIndices
-    , suiteGetDueCardIndicesWithDetails
-    , suiteJson
-    )
+module TestLeitner exposing (suite)
 
 import Array exposing (Array)
 import Array.Extra as ArrayX
@@ -46,6 +40,19 @@ import Test exposing (Test, describe, fuzz, fuzz2, fuzz3)
 import Time
 import Time.Extra exposing (Interval(..), diff)
 import Util exposing (fuzzNatural, fuzzTime)
+
+
+{-| Tests for Leitner algorithm.
+-}
+suite : Test
+suite =
+    describe "Leitner"
+        [ suiteAnswerCard
+        , suiteAnswerCardInDeck
+        , suiteGetDueCardIndices
+        , suiteGetDueCardIndicesWithDetails
+        , suiteJson
+        ]
 
 
 {-| Tests for `answerCard`.

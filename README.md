@@ -225,6 +225,9 @@ individual implementations.  Refer to their documentation for specifics.
     * 🏷️ `Ease`, `TimeInterval`, `Days`, `Minutes`, and `Natural` are now exposed
       (but still opaque), so you may write type signatures with them.
     * 📝 Fix broken links to Anki documentation, since the URLs moved.
+    * 🩹 Fix bug in non-exposed function.  This bug could not have actually
+      caused erroneous behavior in any exposed functions, but it might have
+      going forwards had its output been used for something else.
   * `SpacedRepetition.SMTwoPlus`
     * 💥 **Breaking:** `lastSeen` is now `lastReviewed` in `QueueDetails`, to be
       more explicit/consistent with naming.

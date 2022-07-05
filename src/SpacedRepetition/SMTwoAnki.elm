@@ -138,6 +138,7 @@ may be created via their respective functions.
 
 import Array exposing (Array)
 import Array.Extra as ArrayX
+import Basics.Extra exposing (safeDivide)
 import Json.Decode as Decode
 import Json.Encode as Encode
 import List.Extra as ListX
@@ -1144,9 +1145,9 @@ overdueAmount settings time card =
                 interval =
                     getCurrentIntervalInMinutes settings card
 
-                minutesOverdue : Int
-                minutesOverdue =
-                    diff Minute Time.utc reviewed time - interval
+                minutesSinceLastReview : Int
+                minutesSinceLastReview =
+                    diff Minute Time.utc reviewed time
 
                 reviewed : Time.Posix
                 reviewed =
@@ -1164,4 +1165,7 @@ overdueAmount settings time card =
                             lastReviewed
             in
             -- (Relative Amount Overdue, Absolute Minutes Overdue)
-            ( toFloat minutesOverdue / toFloat interval, minutesOverdue )
+            ( safeDivide (toFloat minutesSinceLastReview) (toFloat interval)
+                |> Maybe.withDefault 0
+            , minutesSinceLastReview - interval
+            )

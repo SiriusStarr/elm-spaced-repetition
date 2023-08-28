@@ -7,7 +7,8 @@
     "test:run": "elm-test-rs",
     "test:review": "elm-review",
     "preview-docs": "elm-doc-preview",
-    "postinstall": "elm-tooling install"
+    "postinstall": "elm-tooling install",
+    "review": "elm-review --fix"
   },
   "dependencies": {
     "elm-doc-preview": "^5.0.5",

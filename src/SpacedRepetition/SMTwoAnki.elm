@@ -613,72 +613,71 @@ scheduleCard settings time answer card =
                             , step = step
                             }
     in
-    (case ( card.srsData, answer ) of
-        ( New, _ ) ->
-            setStep Natural.nil
+    { card
+        | srsData =
+            case ( card.srsData, answer ) of
+                ( New, _ ) ->
+                    setStep Natural.nil
 
-        ( Learning { step }, Good ) ->
-            setStep <| Natural.succ step
+                ( Learning { step }, Good ) ->
+                    setStep <| Natural.succ step
 
-        ( Learning _, Easy ) ->
-            -- Instantly graduate to review if answer is easy
-            review settings.startingEase
-                Natural.nil
-                settings.easyInterval
+                ( Learning _, Easy ) ->
+                    -- Instantly graduate to review if answer is easy
+                    review settings.startingEase
+                        Natural.nil
+                        settings.easyInterval
 
-        ( Learning _, _ ) ->
-            setStep Natural.nil
+                ( Learning _, _ ) ->
+                    setStep Natural.nil
 
-        ( Review { ease, interval, lapses }, Again ) ->
-            Lapsed
-                { ease = ease
-                , oldInterval = interval
-                , lastReviewed = time
-                , step = Natural.nil
-                , lapses = Natural.succ lapses
-                }
+                ( Review { ease, interval, lapses }, Again ) ->
+                    Lapsed
+                        { ease = ease
+                        , oldInterval = interval
+                        , lastReviewed = time
+                        , step = Natural.nil
+                        , lapses = Natural.succ lapses
+                        }
 
-        ( Review { ease, lapses }, Hard ) ->
-            review ease
-                lapses
-                (scaleReviewInterval
-                    (min (easeToFloat ease) settings.hardInterval)
-                    effInterval
-                    |> fuzzInterval time
-                )
+                ( Review { ease, lapses }, Hard ) ->
+                    review ease
+                        lapses
+                        (scaleReviewInterval
+                            (min (easeToFloat ease) settings.hardInterval)
+                            effInterval
+                            |> fuzzInterval time
+                        )
 
-        ( Review { ease, lapses }, Good ) ->
-            review ease
-                lapses
-                (scaleReviewInterval (easeToFloat ease) effInterval
-                    |> fuzzInterval time
-                )
+                ( Review { ease, lapses }, Good ) ->
+                    review ease
+                        lapses
+                        (scaleReviewInterval (easeToFloat ease) effInterval
+                            |> fuzzInterval time
+                        )
 
-        ( Review { ease, lapses }, Easy ) ->
-            review ease
-                lapses
-                (scaleReviewInterval (easeToFloat ease * max 1 settings.easyBonus) effInterval
-                    |> fuzzInterval time
-                )
+                ( Review { ease, lapses }, Easy ) ->
+                    review ease
+                        lapses
+                        (scaleReviewInterval (easeToFloat ease * max 1 settings.easyBonus) effInterval
+                            |> fuzzInterval time
+                        )
 
-        ( Lapsed { step }, Good ) ->
-            setStep <| Natural.succ step
+                ( Lapsed { step }, Good ) ->
+                    setStep <| Natural.succ step
 
-        ( Lapsed { ease, oldInterval, lapses }, Easy ) ->
-            -- Instantly graduate back to review if answer is easy
-            review ease
-                lapses
-                (scaleIntervalWithMinimum settings.lapseNewInterval
-                    settings.lapseMinimumInterval
-                    oldInterval
-                )
+                ( Lapsed { ease, oldInterval, lapses }, Easy ) ->
+                    -- Instantly graduate back to review if answer is easy
+                    review ease
+                        lapses
+                        (scaleIntervalWithMinimum settings.lapseNewInterval
+                            settings.lapseMinimumInterval
+                            oldInterval
+                        )
 
-        ( Lapsed _, _ ) ->
-            setStep Natural.nil
-    )
-        |> (\newStatus ->
-                { card | srsData = newStatus }
-           )
+                ( Lapsed _, _ ) ->
+                    setStep Natural.nil
+    }
 
 
 {-| Given settings, an answer quality, the current time, and a card, determine
@@ -760,13 +759,13 @@ fuzzedIntervalGenerator interval =
                         fuzz : Int
                         fuzz =
                             if i < 7 then
-                                round << max 1 <| toFloat i * 0.25
+                                round <| max 1 <| toFloat i * 0.25
 
                             else if i < 30 then
-                                round << max 2 <| toFloat i * 0.15
+                                round <| max 2 <| toFloat i * 0.15
 
                             else
-                                round << max 4 <| toFloat i * 0.05
+                                round <| max 4 <| toFloat i * 0.05
                     in
                     ( i - fuzz, i + fuzz )
 

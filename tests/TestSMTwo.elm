@@ -69,15 +69,16 @@ suiteAnswerCard =
                     |> Expect.notEqual New
         , fuzz3 fuzzTime fuzzAnswer fuzzCard "Time reviewed should be updated" <|
             \time answer card ->
-                answerCard time answer card
-                    |> (\c ->
-                            case c.srsData of
-                                Reviewed { lastReviewed } ->
-                                    Expect.equal time lastReviewed
+                let
+                    { srsData } =
+                        answerCard time answer card
+                in
+                case srsData of
+                    Reviewed { lastReviewed } ->
+                        Expect.equal time lastReviewed
 
-                                _ ->
-                                    Expect.pass
-                       )
+                    _ ->
+                        Expect.pass
         , fuzz3 fuzzTime fuzzAnswer fuzzCard "E-Factor should never be <1.3" <|
             \time answer card ->
                 answerCard time answer card
@@ -142,19 +143,17 @@ suiteAnswerCard =
         , fuzz3 fuzzTime fuzzAnswer fuzzCard "Card should be repeated if necessary" <|
             \time answer card ->
                 answerCard time answer card
-                    |> (\c ->
-                            (case answer of
-                                Perfect ->
-                                    isReviewed c
+                    |> (case answer of
+                            Perfect ->
+                                isReviewed
 
-                                CorrectWithHesitation ->
-                                    isReviewed c
+                            CorrectWithHesitation ->
+                                isReviewed
 
-                                _ ->
-                                    isRepeating c
-                            )
-                                |> Expect.true "Card should be repeated if necessary"
+                            _ ->
+                                isRepeating
                        )
+                    |> Expect.true "Card should be repeated if necessary"
         , fuzz3 fuzzTime (Fuzz.tuple ( fuzzAnswer, fuzzAnswer )) fuzzCard "Better answers should always result in longer (or equal) intervals and vice versa." <|
             \time ( answer1, answer2 ) card ->
                 let

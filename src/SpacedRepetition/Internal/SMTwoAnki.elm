@@ -130,7 +130,7 @@ and not over MaxInt minutes.
 timeIntervalFromDays : Int -> TimeInterval Days
 timeIntervalFromDays i =
     -- This magic number is max int; truncate does not play well with larger values.
-    TimeInterval << clamp 1440 2147483647 <| i * 1440
+    TimeInterval <| clamp 1440 2147483647 <| i * 1440
 
 
 {-| Unpack a `TimeInterval` as days.
@@ -144,7 +144,7 @@ timeIntervalToDays (TimeInterval i) =
 -}
 minutesToDayInterval : Int -> TimeInterval Days
 minutesToDayInterval i =
-    TimeInterval << max 1440 <| 1440 * (i // 1440)
+    TimeInterval <| max 1440 <| 1440 * (i // 1440)
 
 
 {-| Adjust an `Ease` by an amount.

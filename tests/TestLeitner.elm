@@ -67,35 +67,37 @@ suiteAnswerCard =
                     |> Expect.notEqual New
         , fuzz2 fuzzResponse fuzzCard "Time reviewed should be updated" <|
             \( time, answer, settings ) card ->
-                answerCard time answer settings card
-                    |> (\c ->
-                            case c.srsData of
-                                New ->
-                                    Expect.fail "Card was still 'new' after answering"
+                let
+                    { srsData } =
+                        answerCard time answer settings card
+                in
+                case srsData of
+                    New ->
+                        Expect.fail "Card was still 'new' after answering"
 
-                                BoxN { lastReviewed } ->
-                                    Expect.equal time lastReviewed
+                    BoxN { lastReviewed } ->
+                        Expect.equal time lastReviewed
 
-                                Graduated ->
-                                    Expect.pass
-                       )
+                    Graduated ->
+                        Expect.pass
         , fuzz2 fuzzResponse fuzzCard "Box should never be < 0 or greater than max boxes" <|
             \( time, answer, settings ) card ->
-                answerCard time answer settings card
-                    |> (\c ->
-                            case c.srsData of
-                                BoxN { box } ->
-                                    Natural.toInt box
-                                        |> Expect.all
-                                            [ Expect.atLeast 0
-                                            , highestBoxIndex settings.numBoxes
-                                                |> Natural.toInt
-                                                |> Expect.atMost
-                                            ]
+                let
+                    { srsData } =
+                        answerCard time answer settings card
+                in
+                case srsData of
+                    BoxN { box } ->
+                        Natural.toInt box
+                            |> Expect.all
+                                [ Expect.atLeast 0
+                                , highestBoxIndex settings.numBoxes
+                                    |> Natural.toInt
+                                    |> Expect.atMost
+                                ]
 
-                                _ ->
-                                    Expect.pass
-                       )
+                    _ ->
+                        Expect.pass
         , fuzz2 fuzzResponse fuzzCard "Box should be updated" <|
             \( time, answer, settings ) card ->
                 answerCard time answer settings card

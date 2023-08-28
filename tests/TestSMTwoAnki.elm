@@ -75,167 +75,169 @@ cardSchedulingTests =
     describe "Card Scheduling"
         [ fuzz fuzzResponse "New cards should be handled appropriately" <|
             \( time, answer, settings ) ->
-                answerCard time answer settings { srsData = New }
-                    |> (\{ srsData } ->
-                            case srsData of
-                                Learning { step } ->
-                                    Expect.all
-                                        [ \() -> Expect.false "Starting steps" <| List.isEmpty settings.newSteps
-                                        , \() -> Expect.equal step Natural.nil
-                                        ]
-                                        ()
+                let
+                    { srsData } =
+                        answerCard time answer settings { srsData = New }
+                in
+                case srsData of
+                    Learning { step } ->
+                        Expect.all
+                            [ \() -> Expect.false "Starting steps" <| List.isEmpty settings.newSteps
+                            , \() -> Expect.equal step Natural.nil
+                            ]
+                            ()
 
-                                Review r ->
-                                    Expect.all
-                                        [ \_ -> Expect.true "No starting steps" <| List.isEmpty settings.newSteps
-                                        , \{ ease } -> Expect.within (Absolute 1.0e-9) (easeToFloat settings.startingEase) <| easeToFloat ease
-                                        , \{ interval } -> Expect.equal (boundedDayInterval settings settings.graduatingInterval) interval
-                                        , \{ lapses } -> Expect.equal Natural.nil lapses
-                                        ]
-                                        r
+                    Review r ->
+                        Expect.all
+                            [ \_ -> Expect.true "No starting steps" <| List.isEmpty settings.newSteps
+                            , \{ ease } -> Expect.within (Absolute 1.0e-9) (easeToFloat settings.startingEase) <| easeToFloat ease
+                            , \{ interval } -> Expect.equal (boundedDayInterval settings settings.graduatingInterval) interval
+                            , \{ lapses } -> Expect.equal Natural.nil lapses
+                            ]
+                            r
 
-                                _ ->
-                                    Expect.fail "Card should not go from New to anything but first Learning step or instant graduation with no steps"
-                       )
+                    _ ->
+                        Expect.fail "Card should not go from New to anything but first Learning step or instant graduation with no steps"
         , fuzz2 fuzzResponse fuzzLearning "Learning cards should be handled appropriately" <|
             \( time, answer, settings ) old ->
-                answerCard time answer settings { srsData = Learning old }
-                    |> (\{ srsData } ->
-                            let
-                                normalGraduation : ReviewData -> Expectation
-                                normalGraduation =
-                                    Expect.all
-                                        [ \_ ->
-                                            Natural.toInt (Natural.succ old.step)
-                                                |> Expect.atLeast (List.length settings.newSteps)
-                                        , \{ ease } -> Expect.within (Absolute 0.000000001) (easeToFloat settings.startingEase) <| easeToFloat ease
-                                        , \{ interval } -> Expect.equal (boundedDayInterval settings settings.graduatingInterval) interval
-                                        , \{ lapses } -> Expect.equal Natural.nil lapses
-                                        ]
-                            in
-                            case ( srsData, answer ) of
-                                ( Learning new, Good ) ->
-                                    Expect.all
-                                        [ \() ->
-                                            Expect.false "Do not advance past learning steps" <| Natural.toInt (Natural.succ old.step) >= List.length settings.newSteps
-                                        , \() -> Expect.equal (Natural.succ old.step) new.step
-                                        ]
-                                        ()
+                let
+                    normalGraduation : ReviewData -> Expectation
+                    normalGraduation =
+                        Expect.all
+                            [ \_ ->
+                                Natural.toInt (Natural.succ old.step)
+                                    |> Expect.atLeast (List.length settings.newSteps)
+                            , \{ ease } -> Expect.within (Absolute 0.000000001) (easeToFloat settings.startingEase) <| easeToFloat ease
+                            , \{ interval } -> Expect.equal (boundedDayInterval settings settings.graduatingInterval) interval
+                            , \{ lapses } -> Expect.equal Natural.nil lapses
+                            ]
 
-                                ( Learning _, Easy ) ->
-                                    Expect.fail "Card should have graduated"
+                    { srsData } =
+                        answerCard time answer settings { srsData = Learning old }
+                in
+                case ( srsData, answer ) of
+                    ( Learning new, Good ) ->
+                        Expect.all
+                            [ \() ->
+                                Expect.false "Do not advance past learning steps" <| Natural.toInt (Natural.succ old.step) >= List.length settings.newSteps
+                            , \() -> Expect.equal (Natural.succ old.step) new.step
+                            ]
+                            ()
 
-                                ( Learning new, _ ) ->
-                                    -- Return to start
-                                    Expect.all
-                                        [ \_ -> Expect.false "Only return to start if there are new steps" <| List.isEmpty settings.newSteps
-                                        , Expect.equal Natural.nil
-                                        ]
-                                        new.step
+                    ( Learning _, Easy ) ->
+                        Expect.fail "Card should have graduated"
 
-                                ( Review new, Good ) ->
-                                    normalGraduation new
+                    ( Learning new, _ ) ->
+                        -- Return to start
+                        Expect.all
+                            [ \_ -> Expect.false "Only return to start if there are new steps" <| List.isEmpty settings.newSteps
+                            , Expect.equal Natural.nil
+                            ]
+                            new.step
 
-                                ( Review new, Easy ) ->
-                                    -- Easy graduation
-                                    Expect.all
-                                        [ \{ ease } -> Expect.within (Absolute 0.000000001) (easeToFloat settings.startingEase) <| easeToFloat ease
-                                        , \{ interval } -> Expect.equal (boundedDayInterval settings settings.easyInterval) interval
-                                        , \{ lapses } -> Expect.equal Natural.nil lapses
-                                        ]
-                                        new
+                    ( Review new, Good ) ->
+                        normalGraduation new
 
-                                ( Review new, _ ) ->
-                                    Expect.all
-                                        [ \_ -> Expect.true "Instantly graduate with no new steps" <| List.isEmpty settings.newSteps
-                                        , normalGraduation
-                                        ]
-                                        new
+                    ( Review new, Easy ) ->
+                        -- Easy graduation
+                        Expect.all
+                            [ \{ ease } -> Expect.within (Absolute 0.000000001) (easeToFloat settings.startingEase) <| easeToFloat ease
+                            , \{ interval } -> Expect.equal (boundedDayInterval settings settings.easyInterval) interval
+                            , \{ lapses } -> Expect.equal Natural.nil lapses
+                            ]
+                            new
 
-                                _ ->
-                                    Expect.fail "Card cannot be New or Lapsed after answering"
-                       )
+                    ( Review new, _ ) ->
+                        Expect.all
+                            [ \_ -> Expect.true "Instantly graduate with no new steps" <| List.isEmpty settings.newSteps
+                            , normalGraduation
+                            ]
+                            new
+
+                    _ ->
+                        Expect.fail "Card cannot be New or Lapsed after answering"
         , fuzz2 fuzzResponse fuzzLapsed "Lapsed cards should be handled appropriately" <|
             \( time, answer, settings ) old ->
-                answerCard time answer settings { srsData = Lapsed old }
-                    |> (\{ srsData } ->
-                            let
-                                graduation : ReviewData -> Expectation
-                                graduation =
-                                    Expect.all
-                                        [ \{ ease } -> Expect.equal old.ease ease
-                                        , \{ interval } -> Expect.equal (boundedDayInterval settings (minutesToDayInterval <| max (timeIntervalToMinutes settings.lapseMinimumInterval) (truncate <| min 2147483647 (settings.lapseNewInterval * toFloat (timeIntervalToMinutes old.oldInterval))))) interval
-                                        , \{ lapses } -> Expect.equal old.lapses lapses
-                                        ]
-                            in
-                            case ( srsData, answer ) of
-                                ( Review new, Good ) ->
-                                    Expect.all
-                                        [ \_ ->
-                                            Natural.toInt (Natural.succ old.step)
-                                                |> Expect.atLeast (List.length settings.lapseSteps)
-                                        , graduation
-                                        ]
-                                        new
+                let
+                    graduation : ReviewData -> Expectation
+                    graduation =
+                        Expect.all
+                            [ \{ ease } -> Expect.equal old.ease ease
+                            , \{ interval } -> Expect.equal (boundedDayInterval settings (minutesToDayInterval <| max (timeIntervalToMinutes settings.lapseMinimumInterval) (truncate <| min 2147483647 (settings.lapseNewInterval * toFloat (timeIntervalToMinutes old.oldInterval))))) interval
+                            , \{ lapses } -> Expect.equal old.lapses lapses
+                            ]
 
-                                ( Review new, Easy ) ->
-                                    graduation new
+                    { srsData } =
+                        answerCard time answer settings { srsData = Lapsed old }
+                in
+                case ( srsData, answer ) of
+                    ( Review new, Good ) ->
+                        Expect.all
+                            [ \_ ->
+                                Natural.toInt (Natural.succ old.step)
+                                    |> Expect.atLeast (List.length settings.lapseSteps)
+                            , graduation
+                            ]
+                            new
 
-                                ( Review new, _ ) ->
-                                    Expect.all
-                                        [ \_ -> Expect.true "Instantly graduate with no lapse steps" <| List.isEmpty settings.lapseSteps
-                                        , graduation
-                                        ]
-                                        new
+                    ( Review new, Easy ) ->
+                        graduation new
 
-                                ( Lapsed new, Good ) ->
-                                    Expect.all
-                                        [ \_ -> Expect.lessThan (List.length settings.lapseSteps) <| Natural.toInt (Natural.succ old.step)
-                                        , Expect.equal (Natural.succ old.step)
-                                        ]
-                                        new.step
+                    ( Review new, _ ) ->
+                        Expect.all
+                            [ \_ -> Expect.true "Instantly graduate with no lapse steps" <| List.isEmpty settings.lapseSteps
+                            , graduation
+                            ]
+                            new
 
-                                ( Lapsed _, Easy ) ->
-                                    Expect.fail "Card should have graduated"
+                    ( Lapsed new, Good ) ->
+                        Expect.all
+                            [ \_ -> Expect.lessThan (List.length settings.lapseSteps) <| Natural.toInt (Natural.succ old.step)
+                            , Expect.equal (Natural.succ old.step)
+                            ]
+                            new.step
 
-                                ( Lapsed new, _ ) ->
-                                    -- Return to start
-                                    Expect.all
-                                        [ \_ -> Expect.false "Instantly graduate with no lapse steps" <| List.isEmpty settings.lapseSteps
-                                        , \{ ease } ->
-                                            Expect.equal old.ease ease
-                                        , \{ step } -> Expect.equal Natural.nil step
-                                        , \{ oldInterval } ->
-                                            Expect.equal old.oldInterval oldInterval
-                                        , \{ lapses } ->
-                                            Expect.equal old.lapses lapses
-                                        ]
-                                        new
+                    ( Lapsed _, Easy ) ->
+                        Expect.fail "Card should have graduated"
 
-                                _ ->
-                                    Expect.fail "Card cannot go from Lapsed to Learning or New"
-                       )
+                    ( Lapsed new, _ ) ->
+                        -- Return to start
+                        Expect.all
+                            [ \_ -> Expect.false "Instantly graduate with no lapse steps" <| List.isEmpty settings.lapseSteps
+                            , \{ ease } ->
+                                Expect.equal old.ease ease
+                            , \{ step } -> Expect.equal Natural.nil step
+                            , \{ oldInterval } ->
+                                Expect.equal old.oldInterval oldInterval
+                            , \{ lapses } ->
+                                Expect.equal old.lapses lapses
+                            ]
+                            new
+
+                    _ ->
+                        Expect.fail "Card cannot go from Lapsed to Learning or New"
         , fuzz2 fuzzResponse fuzzReview "Review cards should be handled appropriately" <|
             \( time, answer, settings ) old ->
-                answerCard time answer settings { srsData = Review old }
-                    |> (\{ srsData } ->
-                            case srsData of
-                                Review _ ->
-                                    expectReviewUpdate settings answer time old srsData
+                let
+                    { srsData } =
+                        answerCard time answer settings { srsData = Review old }
+                in
+                case srsData of
+                    Review _ ->
+                        expectReviewUpdate settings answer time old srsData
 
-                                Lapsed new ->
-                                    Expect.all
-                                        [ \_ -> Expect.equal Again answer
-                                        , \{ ease } -> Expect.within (Absolute 1.0e-9) (max 1.3 <| easeToFloat old.ease - 0.2) (easeToFloat ease)
-                                        , \{ step } -> Expect.equal Natural.nil step
-                                        , \{ oldInterval } -> Expect.equal old.interval oldInterval
-                                        , \{ lapses } -> Expect.equal (Natural.succ old.lapses) lapses
-                                        ]
-                                        new
+                    Lapsed new ->
+                        Expect.all
+                            [ \_ -> Expect.equal Again answer
+                            , \{ ease } -> Expect.within (Absolute 1.0e-9) (max 1.3 <| easeToFloat old.ease - 0.2) (easeToFloat ease)
+                            , \{ step } -> Expect.equal Natural.nil step
+                            , \{ oldInterval } -> Expect.equal old.interval oldInterval
+                            , \{ lapses } -> Expect.equal (Natural.succ old.lapses) lapses
+                            ]
+                            new
 
-                                _ ->
-                                    Expect.fail "Card cannot go from Review to Learning or New"
-                       )
+                    _ ->
+                        Expect.fail "Card cannot go from Review to Learning or New"
         ]
 
 
@@ -349,66 +351,68 @@ suiteAnswerCard =
         , fuzz2 fuzzResponse fuzzReview "Interval should always be at least 1 day longer for reviewed cards." <|
             \( time, answer, settings ) old ->
                 let
-                    minBound : Int
-                    minBound =
-                        timeIntervalToMinutes old.interval
-                            + 1440
-                            |> min (timeIntervalToMinutes settings.maximumInterval)
+                    { srsData } =
+                        answerCard time answer settings { srsData = Review old }
                 in
-                answerCard time answer settings { srsData = Review old }
-                    |> (\{ srsData } ->
-                            case srsData of
-                                Review r ->
-                                    expectFuzzedGreaterInterval
-                                        settings
-                                        ( nextInterval settings answer time old, timeIntervalToMinutes r.interval )
-                                        ( minBound, minBound )
+                case srsData of
+                    Review r ->
+                        let
+                            minBound : Int
+                            minBound =
+                                timeIntervalToMinutes old.interval
+                                    + 1440
+                                    |> min (timeIntervalToMinutes settings.maximumInterval)
+                        in
+                        expectFuzzedGreaterInterval
+                            settings
+                            ( nextInterval settings answer time old, timeIntervalToMinutes r.interval )
+                            ( minBound, minBound )
 
-                                _ ->
-                                    Expect.pass
-                       )
+                    _ ->
+                        Expect.pass
         , fuzz2 fuzzResponse fuzzCard "Lapses should be updated and card should be lapsed if appropriate" <|
             \( time, answer, settings ) card ->
-                answerCard time answer settings card
-                    |> (\{ srsData } ->
-                            case ( card.srsData, srsData ) of
-                                ( New, New ) ->
-                                    Expect.fail "Card cannot remain new after answering"
+                let
+                    { srsData } =
+                        answerCard time answer settings card
+                in
+                case ( card.srsData, srsData ) of
+                    ( New, New ) ->
+                        Expect.fail "Card cannot remain new after answering"
 
-                                ( New, Lapsed _ ) ->
-                                    Expect.fail "Card cannot go from New to Lapsed"
+                    ( New, Lapsed _ ) ->
+                        Expect.fail "Card cannot go from New to Lapsed"
 
-                                ( New, _ ) ->
-                                    Expect.pass
+                    ( New, _ ) ->
+                        Expect.pass
 
-                                ( Learning _, Lapsed _ ) ->
-                                    Expect.fail "Card cannot go from Learning to Lapsed"
+                    ( Learning _, Lapsed _ ) ->
+                        Expect.fail "Card cannot go from Learning to Lapsed"
 
-                                ( Learning _, _ ) ->
-                                    Expect.pass
+                    ( Learning _, _ ) ->
+                        Expect.pass
 
-                                ( Review old, Review new ) ->
-                                    Expect.equal old.lapses new.lapses
+                    ( Review old, Review new ) ->
+                        Expect.equal old.lapses new.lapses
 
-                                ( Review old, Lapsed new ) ->
-                                    Expect.all
-                                        [ \() -> Expect.equal Again answer
-                                        , \() -> Expect.equal (Natural.succ old.lapses) new.lapses
-                                        ]
-                                        ()
+                    ( Review old, Lapsed new ) ->
+                        Expect.all
+                            [ \() -> Expect.equal Again answer
+                            , \() -> Expect.equal (Natural.succ old.lapses) new.lapses
+                            ]
+                            ()
 
-                                ( Review _, _ ) ->
-                                    Expect.fail "Card should never go from Review to New or Learning."
+                    ( Review _, _ ) ->
+                        Expect.fail "Card should never go from Review to New or Learning."
 
-                                ( Lapsed old, Review new ) ->
-                                    Expect.equal old.lapses new.lapses
+                    ( Lapsed old, Review new ) ->
+                        Expect.equal old.lapses new.lapses
 
-                                ( Lapsed old, Lapsed new ) ->
-                                    Expect.equal old.lapses new.lapses
+                    ( Lapsed old, Lapsed new ) ->
+                        Expect.equal old.lapses new.lapses
 
-                                ( Lapsed _, _ ) ->
-                                    Expect.fail "Card should never go from Lapsed to New or Learning."
-                       )
+                    ( Lapsed _, _ ) ->
+                        Expect.fail "Card should never go from Lapsed to New or Learning."
         , fuzz3 (Fuzz.tuple ( fuzzSettings, fuzzAnswer )) (Fuzz.tuple ( fuzzTime, fuzzAnswer )) fuzzReview "Better answers should always result in longer (or equal) intervals and vice versa" <|
             \( settings, answer1 ) ( time, answer2 ) old ->
                 let
@@ -949,13 +953,13 @@ intervalFuzzRange { maximumInterval } interval =
             fuzz : Int
             fuzz =
                 if dayInterval < 7 then
-                    round << max 1 <| toFloat dayInterval * 0.25
+                    round <| max 1 <| toFloat dayInterval * 0.25
 
                 else if dayInterval < 30 then
-                    round << max 2 <| toFloat dayInterval * 0.15
+                    round <| max 2 <| toFloat dayInterval * 0.15
 
                 else
-                    round << max 4 <| toFloat dayInterval * 0.05
+                    round <| max 4 <| toFloat dayInterval * 0.05
         in
         ( min (dayInterval - fuzz) <| timeIntervalToDays maximumInterval
         , min (dayInterval + fuzz) <| timeIntervalToDays maximumInterval
@@ -1243,8 +1247,12 @@ nextInterval settings answer time old =
                     oldIntervalInMinutes
 
                 Good ->
-                    minutesOverdue settings time (Review old)
-                        |> (\minutes -> minutes // 2)
+                    let
+                        minutes : Int
+                        minutes =
+                            minutesOverdue settings time (Review old)
+                    in
+                    (minutes // 2)
                         |> (+) oldIntervalInMinutes
                         |> max oldIntervalInMinutes
 

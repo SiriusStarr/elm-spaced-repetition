@@ -451,6 +451,38 @@ getCardDetails c =
     { queueDetails = getQueueDetails c }
 
 
+{-| Given the current time, the time a card was last reviewed, and scheduled
+interval, determine how many days overdue the card is.
+-}
+daysOverdue : Time.Posix -> Time.Posix -> Natural -> Float
+daysOverdue time reviewed interval =
+    let
+        dayDiff : Float
+        dayDiff =
+            toFloat (diff Hour Time.utc reviewed time) / 24
+    in
+    -- The "next day" starts after 12 hours; this is ultimately a hack to prevent the user of the module from having to determine when the day rolls over.
+    dayDiff + 0.5 - Natural.toFloat interval
+
+
+{-| Given a card, return its review status.
+-}
+getQueueDetails : Card a -> QueueDetails
+getQueueDetails c =
+    case c.srsData of
+        New ->
+            NewCard
+
+        Reviewed { lastReviewed, streak } ->
+            ReviewQueue
+                { intervalInDays = Natural.toInt <| streakToInterval streak
+                , lastReviewed = lastReviewed
+                }
+
+        Repeating { streak } ->
+            RepeatingQueue { intervalInDays = Natural.toInt <| streakToInterval streak }
+
+
 {-| `getReversedDueCards` takes the current time (in the `Time.Posix` format
 returned by the `now` task of the core `Time` module) and a `Deck` and returns
 the indices and cards for the subset of the `Deck` that is due for review. While
@@ -530,38 +562,6 @@ compareDue time c1 c2 =
         -- If neither is end of session, then rank "more due" cards first.  Note that this isn't in the SM-2 algorithm and is just a QoL feature.  EQ case doesn't matter, since order becomes irrelevant then.
         ( _, Repeating _ ) ->
             GT
-
-
-{-| Given the current time, the time a card was last reviewed, and scheduled
-interval, determine how many days overdue the card is.
--}
-daysOverdue : Time.Posix -> Time.Posix -> Natural -> Float
-daysOverdue time reviewed interval =
-    let
-        dayDiff : Float
-        dayDiff =
-            toFloat (diff Hour Time.utc reviewed time) / 24
-    in
-    -- The "next day" starts after 12 hours; this is ultimately a hack to prevent the user of the module from having to determine when the day rolls over.
-    dayDiff + 0.5 - Natural.toFloat interval
-
-
-{-| Given a card, return its review status.
--}
-getQueueDetails : Card a -> QueueDetails
-getQueueDetails c =
-    case c.srsData of
-        New ->
-            NewCard
-
-        Reviewed { lastReviewed, streak } ->
-            ReviewQueue
-                { intervalInDays = Natural.toInt <| streakToInterval streak
-                , lastReviewed = lastReviewed
-                }
-
-        Repeating { streak } ->
-            RepeatingQueue { intervalInDays = Natural.toInt <| streakToInterval streak }
 
 
 {-| Check if a card is currently due to be studied.

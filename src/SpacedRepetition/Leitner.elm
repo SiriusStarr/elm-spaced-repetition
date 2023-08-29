@@ -426,8 +426,22 @@ getCardDetails c =
     { queueDetails = getQueueDetails c }
 
 
+{-| Given a card, return its current box status.
+-}
+getQueueDetails : Card a -> QueueDetails
+getQueueDetails c =
+    case c.srsData of
+        New ->
+            NewCard
 
--- * Non-exposed only below here
+        BoxN { box, lastReviewed } ->
+            InBox
+                { boxNumber = Natural.toInt box
+                , lastReviewed = lastReviewed
+                }
+
+        Graduated ->
+            GraduatedCard
 
 
 {-| `getReversedDueCards` takes the current time (in the `Time.Posix` format
@@ -506,24 +520,6 @@ compareDue settings time c1 c2 =
         -- If neither is new, then rank "more due" cards first (by proportion past due).  EQ case doesn't matter, since order becomes irrelevant then.
         ( Graduated, _ ) ->
             LT
-
-
-{-| Given a card, return its current box status.
--}
-getQueueDetails : Card a -> QueueDetails
-getQueueDetails c =
-    case c.srsData of
-        New ->
-            NewCard
-
-        BoxN { box, lastReviewed } ->
-            InBox
-                { boxNumber = Natural.toInt box
-                , lastReviewed = lastReviewed
-                }
-
-        Graduated ->
-            GraduatedCard
 
 
 {-| Check if a card is currently due to be studied.

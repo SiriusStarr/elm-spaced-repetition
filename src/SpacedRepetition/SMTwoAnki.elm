@@ -969,6 +969,60 @@ type alias Natural =
     Natural.Natural
 
 
+{-| Return the currently-scheduled inter-review interval of a card in minutes.
+-}
+getCurrentIntervalInMinutes : AnkiSettings -> Card a -> Int
+getCurrentIntervalInMinutes settings { srsData } =
+    case srsData of
+        New ->
+            0
+
+        Learning { step } ->
+            ListX.getAt (Natural.toInt step) settings.newSteps
+                |> Maybe.map timeIntervalToMinutes
+                -- If there are no steps, the card should immediately be due.
+                |> Maybe.withDefault 1
+
+        Review { interval } ->
+            timeIntervalToMinutes interval
+
+        Lapsed { step } ->
+            ListX.getAt (Natural.toInt step) settings.lapseSteps
+                |> Maybe.map timeIntervalToMinutes
+                -- If there are no steps, the card should immediately be due.
+                |> Maybe.withDefault 1
+
+
+{-| Given a card, return its review status.
+-}
+getQueueDetails : AnkiSettings -> Card a -> QueueDetails
+getQueueDetails s c =
+    case c.srsData of
+        New ->
+            NewCard
+
+        Learning { lastReviewed } ->
+            LearningQueue
+                { lastReviewed = lastReviewed
+                , intervalInMinutes = getCurrentIntervalInMinutes s c
+                }
+
+        Review { interval, lastReviewed, lapses } ->
+            ReviewQueue
+                { lastReviewed = lastReviewed
+                , intervalInDays = timeIntervalToDays interval
+                , lapses = Natural.toInt lapses
+                }
+
+        Lapsed { oldInterval, lastReviewed, lapses } ->
+            LapsedQueue
+                { lastReviewed = lastReviewed
+                , formerIntervalInDays = timeIntervalToDays oldInterval
+                , intervalInMinutes = getCurrentIntervalInMinutes s c
+                , lapses = Natural.toInt lapses
+                }
+
+
 {-| `getReversedDueCards` takes the current time (in the `Time.Posix` format
 returned by the `now` task of the core `Time` module) and a `Deck` and returns
 the indices and cards of the subset of the `Deck` that is due for review. The
@@ -1067,60 +1121,6 @@ compareDue settings time c1 c2 =
                     overdueAmount settings time c2
             in
             compare overdueAmt1 overdueAmt2
-
-
-{-| Return the currently-scheduled inter-review interval of a card in minutes.
--}
-getCurrentIntervalInMinutes : AnkiSettings -> Card a -> Int
-getCurrentIntervalInMinutes settings { srsData } =
-    case srsData of
-        New ->
-            0
-
-        Learning { step } ->
-            ListX.getAt (Natural.toInt step) settings.newSteps
-                |> Maybe.map timeIntervalToMinutes
-                -- If there are no steps, the card should immediately be due.
-                |> Maybe.withDefault 1
-
-        Review { interval } ->
-            timeIntervalToMinutes interval
-
-        Lapsed { step } ->
-            ListX.getAt (Natural.toInt step) settings.lapseSteps
-                |> Maybe.map timeIntervalToMinutes
-                -- If there are no steps, the card should immediately be due.
-                |> Maybe.withDefault 1
-
-
-{-| Given a card, return its review status.
--}
-getQueueDetails : AnkiSettings -> Card a -> QueueDetails
-getQueueDetails s c =
-    case c.srsData of
-        New ->
-            NewCard
-
-        Learning { lastReviewed } ->
-            LearningQueue
-                { lastReviewed = lastReviewed
-                , intervalInMinutes = getCurrentIntervalInMinutes s c
-                }
-
-        Review { interval, lastReviewed, lapses } ->
-            ReviewQueue
-                { lastReviewed = lastReviewed
-                , intervalInDays = timeIntervalToDays interval
-                , lapses = Natural.toInt lapses
-                }
-
-        Lapsed { oldInterval, lastReviewed, lapses } ->
-            LapsedQueue
-                { lastReviewed = lastReviewed
-                , formerIntervalInDays = timeIntervalToDays oldInterval
-                , intervalInMinutes = getCurrentIntervalInMinutes s c
-                , lapses = Natural.toInt lapses
-                }
 
 
 {-| Check if a card is currently due to be studied.

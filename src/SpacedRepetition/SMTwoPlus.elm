@@ -385,6 +385,21 @@ getCardDetails c =
     { queueDetails = getQueueDetails c }
 
 
+{-| Given a card, return its review status.
+-}
+getQueueDetails : Card a -> QueueDetails
+getQueueDetails c =
+    case c.srsData of
+        New ->
+            NewCard
+
+        Reviewed { interval, lastReviewed } ->
+            ReviewQueue
+                { intervalInDays = intervalToFloat interval
+                , lastReviewed = lastReviewed
+                }
+
+
 {-| `getReversedDueCards` takes the current time (in the `Time.Posix` format
 returned by the `now` task of the core `Time` module) and a `Deck` and returns
 the indices and cards for the subset of the `Deck` that is due for review. The
@@ -451,28 +466,6 @@ compareDue time c1 c2 =
             GT
 
 
-{-| Given a card, return its review status.
--}
-getQueueDetails : Card a -> QueueDetails
-getQueueDetails c =
-    case c.srsData of
-        New ->
-            NewCard
-
-        Reviewed { interval, lastReviewed } ->
-            ReviewQueue
-                { intervalInDays = intervalToFloat interval
-                , lastReviewed = lastReviewed
-                }
-
-
-{-| Determine if an answer was correct or not.
--}
-isCorrect : PerformanceRating -> Bool
-isCorrect p =
-    0.6 <= performanceRatingToFloat p
-
-
 {-| Check if a card is currently due to be studied.
 -}
 isDue : Time.Posix -> Card a -> Bool
@@ -483,6 +476,13 @@ isDue time card =
 
         Nothing ->
             True
+
+
+{-| Determine if an answer was correct or not.
+-}
+isCorrect : PerformanceRating -> Bool
+isCorrect p =
+    0.6 <= performanceRatingToFloat p
 
 
 {-| Given the current time, determine what proportion overdue the card is, i.e.

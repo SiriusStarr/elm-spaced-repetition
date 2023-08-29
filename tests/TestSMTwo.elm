@@ -454,7 +454,8 @@ suiteGetDueCardIndices =
                     overdueAmount interval reviewed =
                         toFloat (diff Hour Time.utc reviewed time) / 24 + 0.5 - Natural.toFloat interval
                 in
-                List.foldl step ( firstCard, True ) dueDeck
+                List.drop 1 dueDeck
+                    |> List.foldl step ( firstCard, True )
                     |> Tuple.second
                     |> Expect.true "Expected a sorted deck"
         ]

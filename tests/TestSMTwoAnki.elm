@@ -765,7 +765,8 @@ suiteGetDue =
                             ( Lapsed _, Lapsed _ ) ->
                                 lastMoreOverdue
                 in
-                List.foldl step ( firstCard, True ) dueDeck
+                List.drop 1 dueDeck
+                    |> List.foldl step ( firstCard, True )
                     |> Tuple.second
                     |> Expect.true "Expected a sorted deck"
         ]

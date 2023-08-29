@@ -355,7 +355,8 @@ suiteGetDueCardIndices =
                             (toFloat (deck.settings.boxSpacing <| Natural.toInt box))
                             |> Maybe.withDefault 1
                 in
-                List.foldl step ( firstCard, True ) dueDeck
+                List.drop 1 dueDeck
+                    |> List.foldl step ( firstCard, True )
                     |> Tuple.second
                     |> Expect.true "Expected a sorted deck"
         ]

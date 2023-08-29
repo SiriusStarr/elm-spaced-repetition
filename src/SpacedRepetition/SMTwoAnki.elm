@@ -143,6 +143,7 @@ import Json.Decode as Decode
 import Json.Encode as Encode
 import List.Extra as ListX
 import Random
+import Random.List
 import SpacedRepetition.Internal.Natural as Natural
 import SpacedRepetition.Internal.SMTwoAnki
     exposing
@@ -833,16 +834,14 @@ updateEase answer card =
     2.  Cards less overdue (by proportion of interval)
 4.  Any new cards in the deck (never having been studied before).
 
+_Equally due cards are presented in random order._
+
 `getDueCardIndices` will show cards up to 20 minutes early, as per Anki.
 
 -}
 getDueCardIndices : Time.Posix -> Deck a b -> List Int
 getDueCardIndices time deck =
-    Array.toIndexedList deck.cards
-        |> List.filter
-            (isDue deck.settings time << Tuple.second)
-        |> List.sortWith
-            (\( _, c1 ) ( _, c2 ) -> compareDue deck.settings time c1 c2)
+    getReversedDueCards time deck
         |> ListX.reverseMap Tuple.first
 
 
@@ -859,6 +858,8 @@ getDueCardIndices time deck =
     2.  Cards less overdue (by proportion of interval)
 4.  Any new cards in the deck (never having been studied before).
 
+_Equally due cards are presented in random order._
+
 `getDueCardIndicesWithDetails` will show cards up to 20 minutes early, as per Anki.
 
 -}
@@ -867,11 +868,7 @@ getDueCardIndicesWithDetails :
     -> Deck a b
     -> List { index : Int, isLeech : Bool, queueDetails : QueueDetails }
 getDueCardIndicesWithDetails time deck =
-    Array.toIndexedList deck.cards
-        |> List.filter
-            (isDue deck.settings time << Tuple.second)
-        |> List.sortWith
-            (\( _, c1 ) ( _, c2 ) -> compareDue deck.settings time c1 c2)
+    getReversedDueCards time deck
         |> ListX.reverseMap
             (\( index, card ) ->
                 { index = index
@@ -927,10 +924,6 @@ getCardDetails s c =
     { isLeech = isLeech s c, queueDetails = getQueueDetails s c }
 
 
-
--- * Non-exposed only below here
-
-
 {-| `getLeeches` takes a `Deck` and returns the indices of the subset of the `Deck` that are leeches (as `List Int`). The returned indices will be sorted in the following order:
 
 1.  Cards with more lapses
@@ -974,6 +967,49 @@ type alias Minutes =
 -}
 type alias Natural =
     Natural.Natural
+
+
+{-| `getReversedDueCards` takes the current time (in the `Time.Posix` format
+returned by the `now` task of the core `Time` module) and a `Deck` and returns
+the indices and cards of the subset of the `Deck` that is due for review. The
+returned list will be sorted in the following order:
+
+1.  Any new cards in the deck (never having been studied before).
+2.  Learning cards overdue for review
+    1.  Cards less overdue (by proportion of interval)
+    2.  Cards more overdue (by proportion of interval)
+3.  Review cards overdue for review
+    1.  Cards less overdue (by proportion of interval)
+    2.  Cards more overdue (by proportion of interval)
+4.  Lapsed cards overdue for review
+    1.  Cards less overdue (by proportion of interval)
+    2.  Cards more overdue (by proportion of interval)
+
+_Equally due cards are presented in random order._
+
+`getDueCardIndices` will show cards up to 20 minutes early, as per Anki.
+
+**This is the opposite order intended by the algorithm and must be reversed
+before showing to the user.**
+
+-}
+getReversedDueCards : Time.Posix -> Deck a b -> List ( Int, Card b )
+getReversedDueCards time deck =
+    let
+        shuffledList : Random.Seed -> ( List ( Int, Card b ), Random.Seed )
+        shuffledList =
+            Array.toIndexedList deck.cards
+                |> List.filter
+                    (isDue deck.settings time << Tuple.second)
+                |> Random.List.shuffle
+                |> Random.step
+    in
+    Time.posixToMillis time
+        |> Random.initialSeed
+        |> shuffledList
+        |> Tuple.first
+        |> List.sortWith
+            (\( _, c1 ) ( _, c2 ) -> compareDue deck.settings time c1 c2)
 
 
 {-| Compare the "due"-ness of two cards at a given time.

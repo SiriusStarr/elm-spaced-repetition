@@ -113,6 +113,8 @@ import Basics.Extra exposing (safeDivide)
 import Json.Decode as Decode
 import Json.Encode as Encode
 import List.Extra as ListX
+import Random
+import Random.List
 import SpacedRepetition.Internal.SMTwoPlus
     exposing
         ( Difficulty
@@ -328,21 +330,15 @@ oneMinusReciprocalDiffWeightSquared diffWeight =
     2.  Cards less overdue (by proportion of interval)
 2.  Any new cards in the deck (never having been studied before)
 
+_Equally due cards are presented in random order._
+
 `getDueCardIndices` assumes that a new day begins after 8 hours, e.g. if a card is scheduled to be studied the next day, it will become due after 8 hours of elapsed time. This can of course create edge cases where cards are reviewed too "early" if one studies very early in the morning and again late at night. Still, only very "new" cards would be affected, in which case the adverse effect is presumably minimal.
 
 -}
 getDueCardIndices : Time.Posix -> Deck a -> List Int
 getDueCardIndices time deck =
-    Array.toIndexedList deck
-        |> List.filter
-            (isDue time << Tuple.second)
-        |> List.sortWith
-            (\( _, c1 ) ( _, c2 ) -> compareDue time c1 c2)
+    getReversedDueCards time deck
         |> ListX.reverseMap Tuple.first
-
-
-
--- Non-exposed functions below
 
 
 {-| `getDueCardIndicesWithDetails` takes the current time (in the `Time.Posix` format returned by the `now` task of the core `Time` module) and a `Deck` and returns the the subset of the `Deck` that is due for review (as a list of records), providing their index and which queue they are currently in, with any relevant queue details. The returned indices will be sorted in the following order:
@@ -352,6 +348,8 @@ getDueCardIndices time deck =
     2.  Cards less overdue (by proportion of interval)
 2.  Any new cards in the deck (never having been studied before)
 
+_Equally due cards are presented in random order._
+
 `getDueCardIndicesWithDetails` assumes that a new day begins after 8 hours, e.g. if a card is scheduled to be studied the next day, it will become due after 8 hours of elapsed time. This can of course create edge cases where cards are reviewed too "early" if one studies very early in the morning and again late at night. Still, only very "new" cards would be affected, in which case the adverse effect is presumably minimal.
 
 -}
@@ -360,11 +358,7 @@ getDueCardIndicesWithDetails :
     -> Deck a
     -> List { index : Int, queueDetails : QueueDetails }
 getDueCardIndicesWithDetails time deck =
-    Array.toIndexedList deck
-        |> List.filter
-            (isDue time << Tuple.second)
-        |> List.sortWith
-            (\( _, c1 ) ( _, c2 ) -> compareDue time c1 c2)
+    getReversedDueCards time deck
         |> ListX.reverseMap
             (\( index, card ) ->
                 { index = index, queueDetails = getQueueDetails card }
@@ -389,6 +383,48 @@ type QueueDetails
 getCardDetails : Card a -> { queueDetails : QueueDetails }
 getCardDetails c =
     { queueDetails = getQueueDetails c }
+
+
+{-| `getReversedDueCards` takes the current time (in the `Time.Posix` format
+returned by the `now` task of the core `Time` module) and a `Deck` and returns
+the indices and cards for the subset of the `Deck` that is due for review. The
+returned list will be sorted in the following order:
+
+1.  Any new cards in the deck (never having been studied before)
+2.  Cards overdue for review
+    1.  Cards less overdue (by proportion of interval)
+    2.  Cards more overdue (by proportion of interval)
+
+_Equally due cards are presented in random order._
+
+**This is the opposite order intended by the algorithm and must be reversed
+before showing to the user.**
+
+`getReversedDueCards` assumes that a new day begins after 8 hours, e.g. if a
+card is scheduled to be studied the next day, it will become due after 8 hours
+of elapsed time. This can of course create edge cases where cards are reviewed
+too "early" if one studies very early in the morning and again late at night.
+Still, only very "new" cards would be affected, in which case the adverse effect
+is presumably minimal.
+
+-}
+getReversedDueCards : Time.Posix -> Deck a -> List ( Int, Card a )
+getReversedDueCards time deck =
+    let
+        shuffledList : Random.Seed -> ( List ( Int, Card a ), Random.Seed )
+        shuffledList =
+            Array.toIndexedList deck
+                |> List.filter
+                    (isDue time << Tuple.second)
+                |> Random.List.shuffle
+                |> Random.step
+    in
+    Time.posixToMillis time
+        |> Random.initialSeed
+        |> shuffledList
+        |> Tuple.first
+        |> List.sortWith
+            (\( _, c1 ) ( _, c2 ) -> compareDue time c1 c2)
 
 
 {-| Compare the "due"-ness of two cards at a given time.

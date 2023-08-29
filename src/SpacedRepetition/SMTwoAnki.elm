@@ -929,13 +929,23 @@ getCardDetails s c =
 1.  Cards with more lapses
 2.  Cards with fewer lapses
 
+_Cards with the same number of lapses will be ordered by their appearance in the
+original input deck._
+
 -}
 getLeeches : Deck a b -> List Int
 getLeeches deck =
     Array.toIndexedList deck.cards
         |> List.filter (isLeech deck.settings << Tuple.second)
         |> List.sortWith
-            (\( _, c1 ) ( _, c2 ) -> compare (numberOfLapses c1) (numberOfLapses c2))
+            (\( i1, c1 ) ( i2, c2 ) ->
+                case compare (numberOfLapses c1) (numberOfLapses c2) of
+                    EQ ->
+                        compare i2 i1
+
+                    ltOrGt ->
+                        ltOrGt
+            )
         |> ListX.reverseMap Tuple.first
 
 

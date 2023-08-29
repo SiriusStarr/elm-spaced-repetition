@@ -225,6 +225,8 @@ individual implementations.  Refer to their documentation for specifics.
       in practice, as the only way to end up with cards in the learning queue
       with no learning steps would be to change the settings of a deck that had
       already been partially studied to remove previously-extant `newSteps`.
+    * 🚸 `getLeeches` now returns cards with the same number of lapses in
+      order of their appearance in the input deck.
     * 🏷️ `Ease`, `TimeInterval`, `Days`, `Minutes`, and `Natural` are now exposed
       (but still opaque), so you may write type signatures with them.
     * 📝 Fix broken links to Anki documentation, since the URLs moved.

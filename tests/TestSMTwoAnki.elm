@@ -43,6 +43,7 @@ import SpacedRepetition.SMTwoAnki
         , decoderSRSData
         , encoderAnkiSettings
         , encoderSRSData
+        , getCardDetails
         , getDueCardIndices
         , getDueCardIndicesWithDetails
         , getLeeches
@@ -856,6 +857,79 @@ suiteGetLeeches =
                     |> List.filter (not << flip List.member leeches << Tuple.first)
                     |> ListX.count (isCardLeech deck.settings << Tuple.second)
                     |> Expect.equal 0
+        , fuzz fuzzDeck "getLeeches should be sorted" <|
+            \deck ->
+                let
+                    leeches : List Int
+                    leeches =
+                        getLeeches deck
+
+                    firstCard : Int
+                    firstCard =
+                        case List.head leeches of
+                            Just c ->
+                                c
+
+                            Nothing ->
+                                0
+
+                    step : Int -> ( Int, Bool ) -> ( Int, Bool )
+                    step nextCard ( lastCard, acc ) =
+                        let
+                            bad : ( Int, Bool )
+                            bad =
+                                ( nextCard, False )
+
+                            good : ( Int, Bool )
+                            good =
+                                ( nextCard, acc )
+
+                            numLapses : Int -> Int
+                            numLapses i =
+                                Array.get i deck.cards
+                                    |> Maybe.map (.queueDetails << getCardDetails deck.settings)
+                                    |> Maybe.withDefault NewCard
+                                    |> lapsesFromDetails
+
+                            lapsesFromDetails : QueueDetails -> Int
+                            lapsesFromDetails d =
+                                case d of
+                                    NewCard ->
+                                        0
+
+                                    LearningQueue _ ->
+                                        0
+
+                                    ReviewQueue { lapses } ->
+                                        lapses
+
+                                    LapsedQueue { lapses } ->
+                                        lapses
+                        in
+                        case ( numLapses lastCard, numLapses nextCard ) of
+                            ( 0, _ ) ->
+                                bad
+
+                            ( _, 0 ) ->
+                                bad
+
+                            ( lastLapses, nextLapses ) ->
+                                if lastLapses > nextLapses then
+                                    good
+
+                                else if lastLapses < nextLapses then
+                                    bad
+
+                                else if nextCard > lastCard then
+                                    good
+
+                                else
+                                    bad
+                in
+                List.drop 1 leeches
+                    |> List.foldl step ( firstCard, True )
+                    |> Tuple.second
+                    |> Expect.true "Expected a sorted deck"
         ]
 
 

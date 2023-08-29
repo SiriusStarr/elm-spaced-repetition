@@ -406,12 +406,8 @@ suiteGetDueCardIndices =
 
                     firstCard : { srsData : SRSData }
                     firstCard =
-                        case List.head dueDeck of
-                            Just c ->
-                                c
-
-                            Nothing ->
-                                { srsData = New }
+                        List.head dueDeck
+                            |> Maybe.withDefault { srsData = New }
 
                     step : { srsData : SRSData } -> ( { srsData : SRSData }, Bool ) -> ( { srsData : SRSData }, Bool )
                     step nextCard ( lastCard, acc ) =

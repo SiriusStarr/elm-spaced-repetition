@@ -707,12 +707,8 @@ suiteGetDue =
 
                     firstCard : { srsData : SRSData }
                     firstCard =
-                        case List.head dueDeck of
-                            Just c ->
-                                c
-
-                            Nothing ->
-                                { srsData = New }
+                        List.head dueDeck
+                            |> Maybe.withDefault { srsData = New }
 
                     step : { srsData : SRSData } -> ( { srsData : SRSData }, Bool ) -> ( { srsData : SRSData }, Bool )
                     step nextCard ( lastCard, acc ) =
@@ -860,18 +856,14 @@ suiteGetLeeches =
         , fuzz fuzzDeck "getLeeches should be sorted" <|
             \deck ->
                 let
+                    firstCard : Int
+                    firstCard =
+                        List.head leeches
+                            |> Maybe.withDefault 0
+
                     leeches : List Int
                     leeches =
                         getLeeches deck
-
-                    firstCard : Int
-                    firstCard =
-                        case List.head leeches of
-                            Just c ->
-                                c
-
-                            Nothing ->
-                                0
 
                     step : Int -> ( Int, Bool ) -> ( Int, Bool )
                     step nextCard ( lastCard, acc ) =
@@ -880,9 +872,13 @@ suiteGetLeeches =
                             bad =
                                 ( nextCard, False )
 
-                            good : ( Int, Bool )
-                            good =
-                                ( nextCard, acc )
+                            lastLapses : Int
+                            lastLapses =
+                                numLapses lastCard
+
+                            nextLapses : Int
+                            nextLapses =
+                                numLapses nextCard
 
                             numLapses : Int -> Int
                             numLapses i =
@@ -890,47 +886,45 @@ suiteGetLeeches =
                                     |> Maybe.map (.queueDetails << getCardDetails deck.settings)
                                     |> Maybe.withDefault NewCard
                                     |> lapsesFromDetails
-
-                            lapsesFromDetails : QueueDetails -> Int
-                            lapsesFromDetails d =
-                                case d of
-                                    NewCard ->
-                                        0
-
-                                    LearningQueue _ ->
-                                        0
-
-                                    ReviewQueue { lapses } ->
-                                        lapses
-
-                                    LapsedQueue { lapses } ->
-                                        lapses
                         in
-                        case ( numLapses lastCard, numLapses nextCard ) of
-                            ( 0, _ ) ->
-                                bad
+                        if lastLapses == 0 || nextLapses == 0 then
+                            bad
 
-                            ( _, 0 ) ->
-                                bad
+                        else if lastLapses > nextLapses then
+                            ( nextCard, acc )
 
-                            ( lastLapses, nextLapses ) ->
-                                if lastLapses > nextLapses then
-                                    good
+                        else if lastLapses < nextLapses then
+                            bad
 
-                                else if lastLapses < nextLapses then
-                                    bad
+                        else if nextCard > lastCard then
+                            ( nextCard, acc )
 
-                                else if nextCard > lastCard then
-                                    good
-
-                                else
-                                    bad
+                        else
+                            bad
                 in
                 List.drop 1 leeches
                     |> List.foldl step ( firstCard, True )
                     |> Tuple.second
                     |> Expect.true "Expected a sorted deck"
         ]
+
+
+{-| Get the number of lapses from `QueueDetails`.
+-}
+lapsesFromDetails : QueueDetails -> Int
+lapsesFromDetails d =
+    case d of
+        NewCard ->
+            0
+
+        LearningQueue _ ->
+            0
+
+        ReviewQueue { lapses } ->
+            lapses
+
+        LapsedQueue { lapses } ->
+            lapses
 
 
 {-| Tests for Json encoding/decoding.

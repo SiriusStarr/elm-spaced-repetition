@@ -6,7 +6,7 @@ module SpacedRepetition.SMTwoAnki exposing
     , Answer(..), answerCardInDeck, answerCard
     , getDueCardIndices, getDueCardIndicesWithDetails
     , QueueDetails(..), getCardDetails, getLeeches
-    , Ease, TimeInterval, Days, Minutes, Natural
+    , TimeInterval, Days, Minutes
     )
 
 {-| This package provides everything necessary to create spaced repetition software using the algorithm used by the popular F/OSS program Anki. Anki's algorithm is a heavily-modified version of the SM-2 algorithm, which has been released for free public use when accompanied by the following notice:
@@ -132,7 +132,7 @@ If you require specific details for a single card, you may use the provided func
 The following are exposed only so that they may be used in type annotations and
 may be created via their respective functions.
 
-@docs Ease, TimeInterval, Days, Minutes, Natural
+@docs TimeInterval, Days, Minutes
 
 -}
 
@@ -951,12 +951,6 @@ getLeeches deck =
 
 {-| Opaque type. You don't need it, except maybe in type signatures.
 -}
-type alias Ease =
-    SpacedRepetition.Internal.SMTwoAnki.Ease
-
-
-{-| Opaque type. You don't need it, except maybe in type signatures.
--}
 type alias TimeInterval a =
     SpacedRepetition.Internal.SMTwoAnki.TimeInterval a
 
@@ -971,6 +965,12 @@ type alias Days =
 -}
 type alias Minutes =
     SpacedRepetition.Internal.SMTwoAnki.Minutes
+
+
+{-| Opaque type. You don't need it, except maybe in type signatures.
+-}
+type alias Ease =
+    SpacedRepetition.Internal.SMTwoAnki.Ease
 
 
 {-| Opaque type. You don't need it, except maybe in type signatures.

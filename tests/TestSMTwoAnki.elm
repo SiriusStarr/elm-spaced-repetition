@@ -91,7 +91,7 @@ cardSchedulingTests =
                     Review r ->
                         Expect.all
                             [ \_ -> Expect.true "No starting steps" <| List.isEmpty settings.newSteps
-                            , \{ ease } -> Expect.within (Absolute 1.0e-9) (easeToFloat settings.startingEase) <| easeToFloat ease
+                            , \{ ease } -> Expect.within (Absolute 1.0e-9) (max 1.3 settings.startingEase) <| easeToFloat ease
                             , \{ interval } -> Expect.equal (boundedDayInterval settings settings.graduatingInterval) interval
                             , \{ lapses } -> Expect.equal Natural.nil lapses
                             ]
@@ -108,7 +108,7 @@ cardSchedulingTests =
                             [ \_ ->
                                 Natural.toInt (Natural.succ old.step)
                                     |> Expect.atLeast (List.length settings.newSteps)
-                            , \{ ease } -> Expect.within (Absolute 0.000000001) (easeToFloat settings.startingEase) <| easeToFloat ease
+                            , \{ ease } -> Expect.within (Absolute 0.000000001) (max 1.3 settings.startingEase) <| easeToFloat ease
                             , \{ interval } -> Expect.equal (boundedDayInterval settings settings.graduatingInterval) interval
                             , \{ lapses } -> Expect.equal Natural.nil lapses
                             ]
@@ -142,7 +142,7 @@ cardSchedulingTests =
                     ( Review new, Easy ) ->
                         -- Easy graduation
                         Expect.all
-                            [ \{ ease } -> Expect.within (Absolute 0.000000001) (easeToFloat settings.startingEase) <| easeToFloat ease
+                            [ \{ ease } -> Expect.within (Absolute 0.000000001) (max 1.3 settings.startingEase) <| easeToFloat ease
                             , \{ interval } -> Expect.equal (boundedDayInterval settings settings.easyInterval) interval
                             , \{ lapses } -> Expect.equal Natural.nil lapses
                             ]
@@ -1171,7 +1171,7 @@ fuzzSettings =
         (Fuzz.list fuzzMinuteInterval)
         |> Fuzz.andMap fuzzDayInterval
         |> Fuzz.andMap fuzzDayInterval
-        |> Fuzz.andMap fuzzEase
+        |> Fuzz.andMap (floatRange 0 1000)
         |> Fuzz.andMap (floatRange 0 1000)
         |> Fuzz.andMap (floatRange 0 1000)
         |> Fuzz.andMap fuzzDayInterval
@@ -1179,7 +1179,7 @@ fuzzSettings =
         |> Fuzz.andMap (Fuzz.list fuzzMinuteInterval)
         |> Fuzz.andMap (floatRange 0 1000)
         |> Fuzz.andMap fuzzDayInterval
-        |> Fuzz.andMap fuzzNatural
+        |> Fuzz.andMap int
 
 
 {-| Fuzz an interval in minutes.
@@ -1215,16 +1215,16 @@ getInterval settings srsData =
 -}
 isCardLeech : AnkiSettings -> { srsData : SRSData } -> Bool
 isCardLeech { leechThreshold } c =
-    if leechThreshold == Natural.nil then
+    if leechThreshold <= 0 then
         False
 
     else
         case c.srsData of
             Review { lapses } ->
-                Natural.toInt lapses >= Natural.toInt leechThreshold
+                Natural.toInt lapses >= leechThreshold
 
             Lapsed { lapses } ->
-                Natural.toInt lapses >= Natural.toInt leechThreshold
+                Natural.toInt lapses >= leechThreshold
 
             _ ->
                 False

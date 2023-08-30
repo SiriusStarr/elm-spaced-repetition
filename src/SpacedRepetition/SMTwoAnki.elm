@@ -207,7 +207,7 @@ type alias AnkiSettings =
       newSteps : List (TimeInterval Minutes)
     , graduatingInterval : TimeInterval Days
     , easyInterval : TimeInterval Days
-    , startingEase : Ease
+    , startingEase : Float
 
     -- Review Settings
     , easyBonus : Float
@@ -219,7 +219,7 @@ type alias AnkiSettings =
     , lapseSteps : List (TimeInterval Minutes)
     , lapseNewInterval : Float
     , lapseMinimumInterval : TimeInterval Days
-    , leechThreshold : Natural
+    , leechThreshold : Int
     }
 
 
@@ -255,7 +255,7 @@ createSettings =
         ]
     , graduatingInterval = timeIntervalFromDays 1
     , easyInterval = timeIntervalFromDays 4
-    , startingEase = createEase 2.5
+    , startingEase = 2.5
     , easyBonus = 1.3
     , intervalModifier = 1
     , maximumInterval = timeIntervalFromDays 36500
@@ -263,7 +263,7 @@ createSettings =
     , lapseSteps = [ timeIntervalFromMinutes 10 ]
     , lapseNewInterval = 0
     , lapseMinimumInterval = timeIntervalFromDays 1
-    , leechThreshold = Natural.eight
+    , leechThreshold = 8
     }
 
 
@@ -292,7 +292,7 @@ setEasyInterval i s =
 -}
 setStartingEase : Float -> AnkiSettings -> AnkiSettings
 setStartingEase f s =
-    { s | startingEase = createEase f }
+    { s | startingEase = f }
 
 
 {-| `setEasyBonus` sets the multiplier for the next interval of a card that was answered `Easy` (i.e. additional interval length over merely answering `Good`. Values less than 1.0 are ignored.
@@ -348,7 +348,7 @@ setLapseMinimumInterval i s =
 -}
 setLeechThreshold : Int -> AnkiSettings -> AnkiSettings
 setLeechThreshold i s =
-    { s | leechThreshold = Maybe.withDefault Natural.nil <| Natural.fromInt i }
+    { s | leechThreshold = i }
 
 
 {-| A `Card` represents a single question or unit of knowledge the user will review. In general terms, each would represent a single flashcard. `Card` is defined as an extensible record; as such, whatever necessary custom fields for a use case may simply be included in the record, e.g.:
@@ -477,7 +477,7 @@ encoderAnkiSettings settings =
 
         -- This does not use the canonical encoder `encodeDayInterval` so that it mirrors `setEasyInterval`
         , ( "easyInterval", Encode.int <| timeIntervalToDays settings.easyInterval )
-        , ( "startingEase", encodeEase settings.startingEase )
+        , ( "startingEase", Encode.float settings.startingEase )
         , ( "easyBonus", Encode.float settings.easyBonus )
         , ( "intervalModifier", Encode.float settings.intervalModifier )
 
@@ -489,7 +489,7 @@ encoderAnkiSettings settings =
 
         -- This does not use the canonical encoder `encodeDayInterval` so that it mirrors `setLapseMinimumInterval`
         , ( "lapseMinimumInterval", Encode.int <| timeIntervalToDays settings.lapseMinimumInterval )
-        , ( "leechThreshold", Encode.int <| Natural.toInt settings.leechThreshold )
+        , ( "leechThreshold", Encode.int settings.leechThreshold )
         ]
 
 
@@ -604,7 +604,7 @@ scheduleCard settings time answer card =
                 _ ->
                     if Natural.toInt step >= List.length settings.newSteps then
                         review
-                            settings.startingEase
+                            (createEase settings.startingEase)
                             Natural.nil
                             settings.graduatingInterval
 
@@ -625,7 +625,7 @@ scheduleCard settings time answer card =
 
                 ( Learning _, Easy ) ->
                     -- Instantly graduate to review if answer is easy
-                    review settings.startingEase
+                    review (createEase settings.startingEase)
                         Natural.nil
                         settings.easyInterval
 
@@ -1153,11 +1153,11 @@ isDue settings time card =
 -}
 isLeech : AnkiSettings -> Card a -> Bool
 isLeech settings card =
-    if settings.leechThreshold == Natural.nil then
+    if settings.leechThreshold <= 0 then
         False
 
     else
-        numberOfLapses card >= Natural.toInt settings.leechThreshold
+        numberOfLapses card >= settings.leechThreshold
 
 
 {-| Get the number of times a card has been forgotten from a card.

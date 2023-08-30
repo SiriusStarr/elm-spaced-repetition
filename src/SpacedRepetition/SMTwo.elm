@@ -433,14 +433,14 @@ getDueCardIndicesWithDetails time deck =
   - `NewCard` -- A card that has never before been studied (encountered) by the user.
   - `ReviewQueue {...}` -- A card that is being reviewed for retention.
       - `intervalInDays : Int` -- The interval, in days from the date last seen, that the card was slated for review in.
-      - `lastReviewed : Time.Posix` -- The date and time the card was last reviewed.
+      - `lastSeen : Time.Posix` -- The date and stime the card was last reviewed.
   - `RepeatingQueue {...}` -- A card to which an unsatisfactory answer was given, slated for review before the end of the session.
       - `intervalInDays : Int` -- The interval, in days from the date last seen, that the card was slated for review in. This will reset to the based interval (1 day) if the card was answered incorrectly.
 
 -}
 type QueueDetails
     = NewCard
-    | ReviewQueue { intervalInDays : Int, lastReviewed : Time.Posix }
+    | ReviewQueue { intervalInDays : Int, lastSeen : Time.Posix }
     | RepeatingQueue { intervalInDays : Int }
 
 
@@ -476,7 +476,7 @@ getQueueDetails c =
         Reviewed { lastReviewed, streak } ->
             ReviewQueue
                 { intervalInDays = Natural.toInt <| streakToInterval streak
-                , lastReviewed = lastReviewed
+                , lastSeen = lastReviewed
                 }
 
         Repeating { streak } ->

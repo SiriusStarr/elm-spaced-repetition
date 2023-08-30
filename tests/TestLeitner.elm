@@ -379,7 +379,7 @@ suiteGetDueCardIndicesWithDetails =
                             BoxN { box, lastReviewed } ->
                                 InBox
                                     { boxNumber = Natural.toInt box
-                                    , lastReviewed = lastReviewed
+                                    , lastSeen = lastReviewed
                                     }
 
                             Graduated ->

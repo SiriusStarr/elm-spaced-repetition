@@ -408,14 +408,14 @@ getDueCardIndicesWithDetails time deck =
 
   - `NewCard` -- A card that has never before been studied (encountered) by the user.
   - `InBox {...}` -- A card that is being reviewed for retention.
-      - `lastReviewed : Time.Posix` -- The date and time the card was last reviewed.
       - `boxNumber : Int` -- The "box" that the card is currently in (starting from `0`).
+      - `lastSeen : Time.Posix` -- The date and time the card was last reviewed.
   - `GraduatedCard` -- A card that has been successfully graduated and thus is no longer being studied.
 
 -}
 type QueueDetails
     = NewCard
-    | InBox { boxNumber : Int, lastReviewed : Time.Posix }
+    | InBox { boxNumber : Int, lastSeen : Time.Posix }
     | GraduatedCard
 
 
@@ -437,7 +437,7 @@ getQueueDetails c =
         BoxN { box, lastReviewed } ->
             InBox
                 { boxNumber = Natural.toInt box
-                , lastReviewed = lastReviewed
+                , lastSeen = lastReviewed
                 }
 
         Graduated ->

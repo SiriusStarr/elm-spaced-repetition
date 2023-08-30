@@ -489,7 +489,7 @@ suiteGetDueCardIndicesWithDetails =
                             Reviewed { interval, lastReviewed } ->
                                 ReviewQueue
                                     { intervalInDays = intervalToFloat interval
-                                    , lastReviewed = lastReviewed
+                                    , lastSeen = lastReviewed
                                     }
                 in
                 getDueCardIndicesWithDetails time deck

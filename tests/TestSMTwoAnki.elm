@@ -794,7 +794,7 @@ suiteGetDueWithDetails =
 
                             Learning { lastReviewed, step } ->
                                 LearningQueue
-                                    { lastReviewed = lastReviewed
+                                    { lastSeen = lastReviewed
                                     , intervalInMinutes =
                                         ListX.getAt (Natural.toInt step) deck.settings.newSteps
                                             |> Maybe.map timeIntervalToMinutes
@@ -803,14 +803,14 @@ suiteGetDueWithDetails =
 
                             Review { interval, lastReviewed, lapses } ->
                                 ReviewQueue
-                                    { lastReviewed = lastReviewed
+                                    { lastSeen = lastReviewed
                                     , intervalInDays = timeIntervalToDays interval
                                     , lapses = Natural.toInt lapses
                                     }
 
                             Lapsed { oldInterval, lastReviewed, step, lapses } ->
                                 LapsedQueue
-                                    { lastReviewed = lastReviewed
+                                    { lastSeen = lastReviewed
                                     , formerIntervalInDays = timeIntervalToDays oldInterval
                                     , intervalInMinutes =
                                         ListX.getAt (Natural.toInt step) deck.settings.lapseSteps

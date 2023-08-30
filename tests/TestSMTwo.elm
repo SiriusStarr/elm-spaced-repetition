@@ -486,7 +486,7 @@ suiteGetDueCardIndicesWithDetails =
                             Reviewed { lastReviewed, streak } ->
                                 ReviewQueue
                                     { intervalInDays = Natural.toInt <| streakToInterval streak
-                                    , lastReviewed = lastReviewed
+                                    , lastSeen = lastReviewed
                                     }
 
                             Repeating { streak } ->

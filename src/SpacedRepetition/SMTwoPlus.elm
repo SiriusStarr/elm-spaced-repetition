@@ -370,12 +370,12 @@ getDueCardIndicesWithDetails time deck =
   - `NewCard` -- A card that has never before been studied (encountered) by the user.
   - `ReviewQueue {...}` -- A card that is being reviewed for retention.
       - `intervalInDays : Float` -- The interval, in days from the date last seen, that the card is slated for review in.
-      - `lastReviewed : Time.Posix` -- The date and time the card was last reviewed.
+      - `lastSeen : Time.Posix` -- The date and time the card was last reviewed.
 
 -}
 type QueueDetails
     = NewCard
-    | ReviewQueue { intervalInDays : Float, lastReviewed : Time.Posix }
+    | ReviewQueue { intervalInDays : Float, lastSeen : Time.Posix }
 
 
 {-| `getCardDetails` returns the current queue status for a given card. If you require this for every due card, simply use `getDueCardIndicesWithDetails`.
@@ -396,7 +396,7 @@ getQueueDetails c =
         Reviewed { interval, lastReviewed } ->
             ReviewQueue
                 { intervalInDays = intervalToFloat interval
-                , lastReviewed = lastReviewed
+                , lastSeen = lastReviewed
                 }
 
 

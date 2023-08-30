@@ -883,16 +883,16 @@ getDueCardIndicesWithDetails time deck =
   - `NewCard` -- A card that has never before been studied (encountered) by the user.
 
   - `LearningQueue {...}` -- A card that is in the initial learning queue, progressing through the steps specified in `AnkiSettings.newSteps`.
-      - `lastReviewed : Time.Posix` -- The date and time the card was last reviewed.
+      - `lastSeen : Time.Posix` -- The date and time the card was last reviewed.
       - `intervalInMinutes : Int` -- The interval, in minutes from the date last seen, that the card is slated for review in.
 
   - `ReviewQueue {...}` -- A card that is being reviewed for retention.
-      - `lastReviewed : Time.Posix` -- The date and time the card was last reviewed.
+      - `lastSeen : Time.Posix` -- The date and time the card was last reviewed.
       - `intervalInDays : Int` -- The interval, in days from the date last seen, that the card was slated for review in.
       - `lapses : Int` -- The number of times the card has "lapsed," i.e. been forgotten/incorrectly answered by the user.
 
   - `LapsedQueue {...}` -- A card that has lapsed, i.e. one that was being reviewed but was answered incorrectly and is now being re-learned.
-      - `lastReviewed : Time.Posix` -- The date and time the card was last reviewed.
+      - `lastSeen : Time.Posix` -- The date and time the card was last reviewed.
       - `formerIntervalInDays : Int` -- The interval, in days from the date last seen, that the card was slated for review in prior to last being forgotten/ answered incorrectly.
       - `intervalInMinutes : Int` -- The interval, in minutes from the date last seen, that the card is slated for review in.
       - `lapses : Int` -- The number of times the card has "lapsed," i.e. been forgotten/incorrectly answered by the user.
@@ -901,16 +901,16 @@ getDueCardIndicesWithDetails time deck =
 type QueueDetails
     = NewCard
     | LearningQueue
-        { lastReviewed : Time.Posix
+        { lastSeen : Time.Posix
         , intervalInMinutes : Int
         }
     | ReviewQueue
-        { lastReviewed : Time.Posix
+        { lastSeen : Time.Posix
         , intervalInDays : Int
         , lapses : Int
         }
     | LapsedQueue
-        { lastReviewed : Time.Posix
+        { lastSeen : Time.Posix
         , formerIntervalInDays : Int
         , intervalInMinutes : Int
         , lapses : Int
@@ -1013,20 +1013,20 @@ getQueueDetails s c =
 
         Learning { lastReviewed } ->
             LearningQueue
-                { lastReviewed = lastReviewed
+                { lastSeen = lastReviewed
                 , intervalInMinutes = getCurrentIntervalInMinutes s c
                 }
 
         Review { interval, lastReviewed, lapses } ->
             ReviewQueue
-                { lastReviewed = lastReviewed
+                { lastSeen = lastReviewed
                 , intervalInDays = timeIntervalToDays interval
                 , lapses = Natural.toInt lapses
                 }
 
         Lapsed { oldInterval, lastReviewed, lapses } ->
             LapsedQueue
-                { lastReviewed = lastReviewed
+                { lastSeen = lastReviewed
                 , formerIntervalInDays = timeIntervalToDays oldInterval
                 , intervalInMinutes = getCurrentIntervalInMinutes s c
                 , lapses = Natural.toInt lapses

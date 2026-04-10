@@ -258,6 +258,33 @@ scheduleCard time answer card =
                 breakStreak : ReviewHistory
                 breakStreak =
                     Repeating { ease = newEF, streak = Zero }
+
+                ( newEF, incrementStreak ) =
+                    case card.srsData of
+                        New ->
+                            ( defaultEFactor, One )
+
+                        Reviewed { ease, streak } ->
+                            case streak of
+                                Zero ->
+                                    ( ease, One )
+
+                                One ->
+                                    ( ease, continueStreak ease streak )
+
+                                TwoPlus _ ->
+                                    ( ease, continueStreak ease streak )
+
+                        Repeating { ease, streak } ->
+                            case streak of
+                                Zero ->
+                                    ( ease, One )
+
+                                One ->
+                                    ( ease, continueStreak ease streak )
+
+                                TwoPlus _ ->
+                                    ( ease, continueStreak ease streak )
             in
             case answer of
                 Perfect ->
@@ -285,33 +312,6 @@ scheduleCard time answer card =
 
                 NoRecollection ->
                     breakStreak
-
-        ( newEF, incrementStreak ) =
-            case card.srsData of
-                New ->
-                    ( defaultEFactor, One )
-
-                Reviewed { ease, streak } ->
-                    case streak of
-                        Zero ->
-                            ( ease, One )
-
-                        One ->
-                            ( ease, continueStreak ease streak )
-
-                        TwoPlus _ ->
-                            ( ease, continueStreak ease streak )
-
-                Repeating { ease, streak } ->
-                    case streak of
-                        Zero ->
-                            ( ease, One )
-
-                        One ->
-                            ( ease, continueStreak ease streak )
-
-                        TwoPlus _ ->
-                            ( ease, continueStreak ease streak )
 
         continueStreak : EFactor -> Streak -> Streak
         continueStreak eF streak =
